@@ -1,4 +1,5 @@
 import os
+import asyncio
 from pyrogram import Client, filters
 
 API_ID = int(os.environ.get("API_ID", 0))
@@ -18,4 +19,6 @@ async def start(client, message):
 
 if __name__ == "__main__":
     print("جاري تشغيل البوت...")
-    app.run()
+    app.start()
+    print("البوت يعمل بنجاح ويمكنه استقبال الرسائل.")
+    asyncio.idle()
