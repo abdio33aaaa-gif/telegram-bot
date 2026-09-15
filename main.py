@@ -1,33 +1,52 @@
 import os
-import asyncio
-from pyrogram import Client, filters
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")
 
-app = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("أهلاً! 🚀\nابعتلي رابط من:\n- يوتيوب\n- تيك توك\n- انستغرام\n- فيسبوك\nوأنا بحملو فوراً")
 
-@app.on_message(filters.command("start"))
-async def start(client, message):
-    await message.reply("أهلاً! أرسل رابط يوتيوب")
-
-@app.on_message(filters.text & ~filters.command("start"))
-async def download(client, message):
-    url = message.text
-    if "youtube.com" not in url and "youtu.be" not in url:
+async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
+    if not url.startswith("http"):
+        await update.message.reply_text("ابعت رابط صحيح يبدأ بـ https://")
         return
-    status = await message.reply("⏳ جاري التحميل...")
+
+    await update.message.reply_text("⏳ عم حمّل... ثواني بس")
+
+    ydl_opts = {
+        'outtmpl': 'video.%(ext)s',
+        'format': 'best[ext=mp4]/best',
+        'noplaylist': True,
+        'nocheckcertificate': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web']
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36'
+        }
+    }
+
     try:
-        ydl_opts = {'format': 'best', 'outtmpl': '%(title)s.%(ext)s'}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            file = ydl.prepare_filename(info)
-        await client.send_video(message.chat.id, file, caption=info.get('title',''))
-        os.remove(file)
-        await status.delete()
-    except Exception as e:
-        await status.edit(f"خطأ: {e}")
+            filename = ydl.prepare_filename(info)
 
-app.run()
+        # ابعت الفيديو
+        await update.message.reply_video(video=open(filename, 'rb'), caption="تم التحميل ✅")
+        os.remove(filename)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ خطأ: {e}")
+        print(e)
+
+app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
+
+print("Bot is running...")
+app.run_polling()
