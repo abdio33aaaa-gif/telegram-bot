@@ -44,11 +44,12 @@ async def download(update, context):
     msg = await update.message.reply_text("⏳ جاري التحميل...")
 
     try:
-        ydl_opts = {'outtmpl': '%(id)s.%(ext)s', 'quiet': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-
+                ydl_opts = {
+            'outtmpl': '%(id)s.%(ext)s',
+            'quiet': True,
+            'no_warnings': True,
+            'extractor_args': {'instagram': {'api': ['graphql']}},
+                }
             if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
                 await update.message.reply_photo(photo=open(filename, 'rb'), caption=f"✅ تم التحميل\n{CHANNEL} | @{context.bot.username}")
             else:
