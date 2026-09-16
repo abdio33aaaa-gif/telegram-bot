@@ -1,9 +1,8 @@
 import requests
 import telebot
 
-BOT_TOKEN = "حط_توكن_بوتك_هون"
+BOT_TOKEN = "8977024211:AAG3OD86xIdCl7t13Oalk_Fy7X8xG1ZAOJs"
 bot = telebot.TeleBot(BOT_TOKEN)
-
 def get_link(url):
     try:
         r = requests.post("https://api.cobalt.tools/api/json",
