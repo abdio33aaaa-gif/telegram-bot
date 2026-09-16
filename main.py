@@ -1,98 +1,78 @@
-import os, json
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-import yt_dlp
+import os, json, yt_dlp
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("TOKEN")
 CHANNEL = "@BotKanal24"
 CHANNEL_LINK = "https://t.me/BotKanal24"
-ADMIN_ID = 8914058991
-ADMIN_NAME = "السيد أحمد"
 USERS_FILE = "users.json"
 
-def load_users():
-    if os.path.exists(USERS_FILE):
-        try: return set(json.load(open(USERS_FILE)))
-        except: return set()
-    return set()
+users = set()
+if os.path.exists(USERS_FILE):
+    try:
+        users = set(json.load(open(USERS_FILE)))
+    except: users = set()
 
-def save_users(users):
-    json.dump(list(users), open(USERS_FILE, "w"))
-
-users = load_users()
+def save_users(u):
+    json.dump(list(u), open(USERS_FILE, "w"))
 
 async def check_sub(update, context):
     try:
         m = await context.bot.get_chat_member(CHANNEL, update.effective_user.id)
-        return m.status in ['member','administrator','creator']
-    except: return False
+        return m.status in ["member", "administrator", "creator"]
+    except:
+        return True
 
 async def start(update, context):
     users.add(update.effective_user.id)
     save_users(users)
-    if not await check_sub(update, context):
-        kb = [[InlineKeyboardButton("📢 اشترك بقناتنا ✅", url=CHANNEL_LINK)],
-              [InlineKeyboardButton("✅ تحققت من الاشتراك", callback_data="check")]]
-        await update.message.reply_text(f"👋 أهلا يا {update.effective_user.first_name}!\n\n⚠️ لازم تشترك بقناتنا {CHANNEL} عشان تستخدم البوت\n\nبعد الاشتراك اضغط تحققت 👇", reply_markup=InlineKeyboardMarkup(kb))
-        return
-    kb = [[InlineKeyboardButton("📢 قناتنا الرسمية", url=CHANNEL_LINK)],
-          [InlineKeyboardButton("📖 طريقة الاستخدام", callback_data="help")]]
-    await update.message.reply_text(f"🎉 أهلا يا {update.effective_user.first_name}!\n\n🚀 مرحبا بك في بوت التحميل الخارق\n\n✅ انت الآن مشترك ويمكنك التحميل مباشرة!\n\n📌 أرسل لي رابط من:\n• تيك توك (بدون علامة)\n• انستغرام - ريلز وستوري\n• فيسبوك\n• يوتيوب\n\nوسأحمله لك بثواني ⚡\n\n👨‍💻 المطور: {ADMIN_NAME}", reply_markup=InlineKeyboardMarkup(kb))
+    kb = [[InlineKeyboardButton("📢 القناة الرسمية", url=CHANNEL_LINK)],
+          [InlineKeyboardButton("📖 كيفية الاستخدام", callback_data="help")]]
+    await update.message.reply_text(f"🎉 أهلا بك في بوت التحميل الخارق\n\nأرسل أي رابط من تيك توك / انستا / يوتيوب وسأحمله لك صور أو فيديو بدون علامة ✅\n\n{CHANNEL}", reply_markup=InlineKeyboardMarkup(kb))
 
 async def download(update, context):
     users.add(update.effective_user.id)
     save_users(users)
     if not await check_sub(update, context):
-        kb = [[InlineKeyboardButton("📢 اشترك بقناتنا ✅", url=CHANNEL_LINK)]]
-        await update.message.reply_text(f"⚠️ اشترك بقناتنا أولاً {CHANNEL}", reply_markup=InlineKeyboardMarkup(kb))
+        kb = [[InlineKeyboardButton("📢 اشترك بالقناة", url=CHANNEL_LINK)]]
+        await update.message.reply_text(f"⚠️ اشترك بالقناة أولاً {CHANNEL_LINK}", reply_markup=InlineKeyboardMarkup(kb))
         return
+
     url = update.message.text.strip()
     if not url.startswith("http"): return
+
     msg = await update.message.reply_text("⏳ جاري التحميل...")
+
     try:
-        ydl_opts = {'outtmpl': 'video.%(ext)s', 'format': 'best'}
+        ydl_opts = {'outtmpl': '%(id)s.%(ext)s', 'quiet': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-        await update.message.reply_video(video=open(filename, 'rb'))
-        os.remove(filename)
-        await msg.delete()
+
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                await update.message.reply_photo(photo=open(filename, 'rb'), caption=f"✅ تم التحميل\n{CHANNEL} | @{context.bot.username}")
+            else:
+                await update.message.reply_video(video=open(filename, 'rb'), caption=f"✅ تم التحميل\n{CHANNEL} | @{context.bot.username}")
+
+            os.remove(filename)
+            await msg.delete()
+
     except Exception as e:
-        await msg.edit_text(f"❌ ما قدرت حمل: {e}")
+        await msg.edit_text(f"❌ ما قدرت حمّل الرابط")
 
 async def button_check(update, context):
     q = update.callback_query
     await q.answer()
     if q.data == "help":
-        await q.edit_message_text(f"📖 طريقة الاستخدام:\n\n1️⃣ انسخ رابط الفيديو\n2️⃣ الصقه هنا\n3️⃣ انتظر ثواني\n\n💡 لازم الفيديو يكون عام\n\n📢 قناتنا: {CHANNEL_LINK}")
+        await q.edit_message_text(f"📖 أرسل رابط الفيديو أو الصورة فقط والبوت يحملها تلقائياً\n\nيدعم: TikTok, Instagram, YouTube, Facebook, Pinterest\n\n{CHANNEL}")
         return
     if await check_sub(update, context):
-        await q.edit_message_text(f"✅ ممتاز يا {q.from_user.first_name}!\nيمكنك الآن ارسال أي رابط للتحميل 🚀")
+        await q.edit_message_text(f"✅ تم التحقق يا بطل!")
     else:
-        await q.answer("❌ لسه مو مشترك، اشترك أولاً", show_alert=True)
+        await q.edit_message_text(f"❌ لسه ما اشتركت")
 
-async def broadcast(update, context):
-    if update.effective_user.id != ADMIN_ID: return
-    if not context.args:
-        await update.message.reply_text("استخدم: /broadcast رسالتك")
-        return
-    text = " ".join(context.args)
-    c=0
-    await update.message.reply_text(f"⏳ جاري الاذاعة لـ {len(users)} مشترك...")
-    for uid in users:
-        try:
-            await context.bot.send_message(uid, text)
-            c+=1
-        except: pass
-    await update.message.reply_text(f"✅ تم الارسال لـ {c} شخص")
-
-def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("broadcast", broadcast))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
-    app.add_handler(CallbackQueryHandler(button_check))
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
+app.add_handler(CallbackQueryHandler(button_check))
+app.run_polling()
