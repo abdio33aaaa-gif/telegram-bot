@@ -1,7 +1,8 @@
 import os, re, telebot, yt_dlp
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent
 
-BOT_TOKEN = "حط_التوكن_الجديد_هون_بعد_ما_تعمل_revoke"
+# رح يقرأ التوكن من المتغيرات، اذا ما لقى بياخد يلي تحت
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8977024211:AAG3OD86xIdCl7t13Oalk_Fy7X8xG1ZAOJs")
 bot = telebot.TeleBot(BOT_TOKEN)
 user_links = {}
 
@@ -10,7 +11,6 @@ def clean_url(text):
     if not m: return None
     return m.group(0).split('?')[0]
 
-# --- الرسائل العادية (مثل قبل) ---
 @bot.message_handler(commands=['start'])
 def start(m):
     bot.reply_to(m, f"أهلا {m.from_user.first_name} 👋\nابعث رابط تيك توك / انستا / فيسبوك")
@@ -21,10 +21,7 @@ def handle(m):
     if not url: return
     user_links[m.chat.id] = url
     markup = InlineKeyboardMarkup()
-    markup.row(
-        InlineKeyboardButton("🎬 فيديو", callback_data="video"),
-        InlineKeyboardButton("🎵 صوت", callback_data="audio")
-    )
+    markup.row(InlineKeyboardButton("🎬 فيديو", callback_data="video"), InlineKeyboardButton("🎵 صوت", callback_data="audio"))
     bot.reply_to(m, f"شو بدك تنزل؟\n{url}", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -60,23 +57,14 @@ def callback(call):
         print(e)
         bot.send_message(chat_id, "❌ خطأ، الرابط خاص")
 
-# --- هاد الجديد للـ Inline ---
 @bot.inline_handler(lambda query: True)
 def inline_query(inline):
     text = inline.query.strip()
     url = clean_url(text)
     if not url:
-        # اذا كتب البوت بدون رابط
-        res = InlineQueryResultArticle('1', 'حل من تيك توك', InputTextMessageContent('ابعت رابط تيك توك / انستا / فيسبوك وانا بحملو\nمثال: https://vm.tiktok.com/xxxx'), description='الصق الرابط هنا')
+        res = InlineQueryResultArticle('1', 'حل من تيك توك', InputTextMessageContent('ابعت رابط وانا بحملو'), description='الصق الرابط هنا')
         return bot.answer_inline_query(inline.id, [res], cache_time=1)
-
-    # اذا في رابط، نرجع نتيجتين
-    try:
-        results = []
-        results.append(InlineQueryResultArticle('1', f'🎬 حمل فيديو', InputTextMessageContent(f'{url}'), description=url, thumb_url='https://cdn-icons-png.flaticon.com/512/1384/1384060.png'))
-        results.append(InlineQueryResultArticle('2', f'🎵 حمل صوت فقط', InputTextMessageContent(f'{url}'), description=url))
-        bot.answer_inline_query(inline.id, results, cache_time=1)
-    except Exception as e:
-        print(e)
+    results = [InlineQueryResultArticle('1', f'🎬 حمل فيديو', InputTextMessageContent(f'{url}'), description=url), InlineQueryResultArticle('2', f'🎵 حمل صوت', InputTextMessageContent(f'{url}'), description=url)]
+    bot.answer_inline_query(inline.id, results, cache_time=1)
 
 bot.infinity_polling()
