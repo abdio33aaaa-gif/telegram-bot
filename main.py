@@ -2,7 +2,7 @@ import os, json, yt_dlp
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 
-TOKEN = os.getenv("TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("BOT_T0KEN")
+TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TOKEN")
 CHANNEL = "@BotKanal24"
 CHANNEL_LINK = "https://t.me/BotKanal24"
 USERS_FILE = "users.json"
@@ -11,7 +11,8 @@ users = set()
 if os.path.exists(USERS_FILE):
     try:
         users = set(json.load(open(USERS_FILE)))
-    except: users = set()
+    except:
+        users = set()
 
 def save_users(u):
     json.dump(list(u), open(USERS_FILE, "w"))
@@ -39,17 +40,22 @@ async def download(update, context):
         return
 
     url = update.message.text.strip()
-    if not url.startswith("http"): return
+    if not url.startswith("http"):
+        return
 
     msg = await update.message.reply_text("⏳ جاري التحميل...")
 
     try:
-                ydl_opts = {
+        ydl_opts = {
             'outtmpl': '%(id)s.%(ext)s',
             'quiet': True,
             'no_warnings': True,
             'extractor_args': {'instagram': {'api': ['graphql']}},
-                }
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+
             if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
                 await update.message.reply_photo(photo=open(filename, 'rb'), caption=f"✅ تم التحميل\n{CHANNEL} | @{context.bot.username}")
             else:
@@ -59,7 +65,7 @@ async def download(update, context):
             await msg.delete()
 
     except Exception as e:
-        await msg.edit_text(f"❌ ما قدرت حمّل الرابط")
+        await msg.edit_text(f"❌ ما قدرت حل الرابط\n{e}")
 
 async def button_check(update, context):
     q = update.callback_query
