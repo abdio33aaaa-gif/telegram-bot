@@ -1,54 +1,81 @@
 import os, re, telebot, yt_dlp
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 BOT_TOKEN = "8977024211:AAG3OD86xIdCl7t13Oalk_Fy7X8xG1ZAOJs"
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# نحفظ رابط كل مستخدم مؤقتا
+user_links = {}
+
 def clean_url(text):
-    # بيجيب اول رابط من الرسالة وبيشيل?is= و?stkn=
     m = re.search(r'https?://\S+', text)
     if not m: return None
     url = m.group(0)
-    url = url.split('?')[0] # اهم سطر - بيشيل كلشي بعد?
-    # يصلح روابط youtu.be
-    if "youtu.be" in url:
-        url = url.split('?')[0]
+    url = url.split('?')[0]
     return url
 
 @bot.message_handler(commands=['start'])
 def start(m):
-    bot.reply_to(m, f"أهلا {m.from_user.first_name} 👋\nابعث رابط عام بدون مشاركة خاصة، وانا بحملو.")
+    bot.reply_to(m, f"أهلا {m.from_user.first_name} 👋\nابعث رابط عام وانا بخيرك فيديو ولا صوت.")
 
 @bot.message_handler(func=lambda m: True)
 def handle(m):
-    raw_url = m.text
-    url = clean_url(raw_url)
+    url = clean_url(m.text)
+    if not url: return
+
+    user_links[m.chat.id] = url
+
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("🎬 فيديو", callback_data="video"),
+        InlineKeyboardButton("🎵 صوت فقط", callback_data="audio")
+    )
+    bot.reply_to(m, f"شو بدك تنزل من هاد الرابط؟\n{url}", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback(call):
+    chat_id = call.message.chat.id
+    url = user_links.get(chat_id)
     if not url:
-        return
+        return bot.answer_callback_query(call.id, "الرابط انتهى، ابعثو مرة تانية")
 
-    wait = bot.reply_to(m, "⏳ جاري التحميل، ثواني...")
+    choice = call.data
+    bot.edit_message_text(f"⏳ جاري تحميل الـ {choice}...", chat_id, call.message.message_id)
+
     try:
-        ydl_opts = {
-            'format': 'mp4/best',
-            'outtmpl': 'video.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info).replace('webm','mp4').replace('mkv','mp4')
-            # دور على الملف
-            if not os.path.exists(filename):
-                for f in os.listdir('.'):
-                    if f.startswith('video.'):
-                        filename = f
-                        break
+        if choice == "video":
+            ydl_opts = {'format': 'mp4/best', 'outtmpl': 'video.%(ext)s', 'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                # لاقي الملف
+                if not os.path.exists(filename):
+                    for f in os.listdir('.'):
+                        if f.startswith('video.'): filename = f; break
 
-        with open(filename, 'rb') as f:
-            bot.send_video(m.chat.id, f, caption="✅ تفضل تم التحميل\n@BotKanal24")
-        os.remove(filename)
-        bot.delete_message(m.chat.id, wait.message_id)
+            with open(filename, 'rb') as f:
+                bot.send_video(chat_id, f, caption="✅ تفضل الفيديو\n@BotKanal24")
+            os.remove(filename)
+
+        else: # audio
+            ydl_opts = {'format': 'bestaudio/best', 'outtmpl': 'audio.%(ext)s', 'quiet': True, 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}]}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = "audio.mp3"
+                if not os.path.exists(filename):
+                    for f in os.listdir('.'):
+                        if f.startswith('audio.'): filename = f; break
+
+            with open(filename, 'rb') as f:
+                bot.send_audio(chat_id, f, caption="✅ تفضل الصوت\n@BotKanal24")
+            os.remove(filename)
+
+        bot.delete_message(chat_id, call.message.message_id)
+
     except Exception as e:
         print(e)
-        bot.edit_message_text("❌ الرابط خاص (فيه stkn او is) أو محمي. جرب تنسخ الرابط من المتصفح مباشرة، مو من زر المشاركة.\nمثال رابط صحيح:\nhttps://www.tiktok.com/@user/video/123..\nhttps://www.instagram.com/reel/ABC123/", m.chat.id, wait.message_id)
+        bot.send_message(chat_id, "❌ خطأ بالتحميل، تأكد الرابط عام بدون stkn")
+        try: os.remove(filename)
+        except: pass
 
 bot.infinity_polling()
