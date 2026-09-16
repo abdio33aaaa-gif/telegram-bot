@@ -2,7 +2,7 @@ import os, json, yt_dlp
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.getenv("TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("BOT_T0KEN")
 CHANNEL = "@BotKanal24"
 CHANNEL_LINK = "https://t.me/BotKanal24"
 USERS_FILE = "users.json"
