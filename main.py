@@ -1,71 +1,98 @@
-import os, json, re, requests, yt_dlp
+import os, re, requests, yt_dlp
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
 
 TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TOKEN")
-CHANNEL = "@BotKanal24"
 
 def clean_url(url):
-    # يحذف?stkn و?img_index تلقائياً
-    url = url.strip().split('?')[0].split('&')[0]
-    # يحول https://www.instagram.com/reel/xxx/ ل /p/xxx/
-    url = url.replace("/reel/", "/p/").replace("/reels/", "/p/")
+    url = url.strip().split('?')[0].split('&')[0].split('=')[0]
     return url
 
 async def start(update, context):
-    kb = [[InlineKeyboardButton("📢 القناة", url="https://t.me/BotKanal24")]]
-    await update.message.reply_text("🎉 أرسل أي رابط، البوت لحالو بينضفو ويحملو", reply_markup=InlineKeyboardMarkup(kb))
+    kb = [[InlineKeyboardButton("📢 القناة الرسمية", url="https://t.me/BotKanal24")]]
+    await update.message.reply_text(
+        "🎉 **أهلاً يا بطل!**\n\n"
+        "أرسل أي رابط من انستا / تيك توك / يوتيوب\n"
+        "ورح حملو الك بأعلى جودة وبدون علامة مائية ✨\n\n"
+        "@BotKanal24",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown"
+    )
 
 async def download(update, context):
-    raw_url = update.message.text.strip()
-    if not raw_url.startswith("http"):
+    raw = update.message.text.strip()
+    if not raw.startswith("http"):
         return
-    url = clean_url(raw_url)
-    msg = await update.message.reply_text(f"⏳ عم حمل:\n{url}")
 
-    # 1. جرب yt-dlp أول شي (تيك توك ويوتيوب وفيديوهات انستا)
+    url = clean_url(raw)
+    m = re.search(r"/p/([^/=\s]+)", raw)
+    if m:
+        shortcode = m.group(1)[:11]
+        url = f"https://www.instagram.com/p/{shortcode}/"
+
+    # رسالة التحميل الحلوة الجديدة
+    msg = await update.message.reply_text(
+        "⏳ **لحظة يا غالي...**\n\n"
+        "✨ عم جهزلك الفيديو بأعلى جودة\n"
+        "💙 شكراً لصبرك، رغبة المستخدم تهمنا",
+        parse_mode="Markdown"
+    )
+
+    # 1 - yt-dlp
     try:
-        ydl_opts = {'outtmpl': '%(id)s.%(ext)s', 'quiet': True, 'no_warnings': True}
+        ydl_opts = {
+            'outtmpl': '%(id)s.%(ext)s',
+            'quiet': True,
+            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            if os.path.exists(filename):
-                if filename.lower().endswith(('.jpg','.jpeg','.png','.webp')):
-                    await update.message.reply_photo(photo=open(filename,'rb'))
+            fn = ydl.prepare_filename(info)
+            if os.path.exists(fn):
+                if fn.lower().endswith(('.jpg','.jpeg','.png','.webp')):
+                    await update.message.reply_photo(photo=open(fn,'rb'), caption="✅ **تفضل، تم التحميل بنجاح!**\n\n@BotKanal24", parse_mode="Markdown")
                 else:
-                    await update.message.reply_video(video=open(filename,'rb'))
-                os.remove(filename)
+                    await update.message.reply_video(video=open(fn,'rb'), caption="✅ **تفضل، تم التحميل بنجاح!**\n\n@BotKanal24", parse_mode="Markdown")
+                os.remove(fn)
                 await msg.delete()
                 return
     except Exception as e:
-        print(f"yt-dlp failed: {e}")
+        print(e)
 
-    # 2. إذا فشل وكان انستا صورة - جرب طريقة الصور المباشرة
-    if "instagram.com" in url:
-        try:
-            shortcode_match = re.search(r"/p/([^/]+)/?", url)
-            if shortcode_match:
-                shortcode = shortcode_match.group(1)
-                # استخدم ddinstagram اللي بيحل صور انستا
-                dd_url = f"https://www.ddinstagram.com/p/{shortcode}/"
-                r = requests.get(dd_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-                # دور على رابط الصورة أو الفيديو بـ og
-                m_video = re.search(r'"og:video" content="([^"]+)"', r.text)
-                m_image = re.search(r'"og:image" content="([^"]+)"', r.text)
-                if m_video:
-                    v_url = m_video.group(1)
-                    await update.message.reply_video(video=v_url, caption="✅ تم التحميل")
-                    await msg.delete()
-                    return
-                elif m_image:
-                    i_url = m_image.group(1)
-                    await update.message.reply_photo(photo=i_url, caption="✅ تم التحميل - صورة")
-                    await msg.delete()
-                    return
-        except Exception as e2:
-            print(f"insta fallback failed: {e2}")
+    # 2 - طريقة بدون كوكيز
+    try:
+        sc_match = re.search(r"/p/([^/]+)", url)
+        if sc_match:
+            shortcode = sc_match.group(1)
+            for site in [f"https://ddinstagram.com/p/{shortcode}/", f"https://www.picuki.com/media/{shortcode}"]:
+                try:
+                    r = requests.get(site, headers={'User-Agent':'Mozilla/5.0'}, timeout=15)
+                    v = re.findall(r'https://[^"]+\.mp4[^"]*', r.text)
+                    i = re.findall(r'https://[^"]+scontent[^"]+\.jpg[^"]*', r.text)
+                    if v:
+                        await update.message.reply_video(video=v[0], caption="✅ **تفضل، تم التحميل بنجاح!**\n\n@BotKanal24", parse_mode="Markdown")
+                        await msg.delete()
+                        return
+                    if i:
+                        await update.message.reply_photo(photo=i[0], caption="✅ **تفضل، تم التحميل بنجاح!**\n\n@BotKanal24", parse_mode="Markdown")
+                        await msg.delete()
+                        return
+                except:
+                    continue
+    except Exception as e:
+        print(e)
 
-    await msg.edit_text("❌ ما قدرت حل الرابط حتى بعد التنضيف\nجرب رابط تيك توك للتأكد، وانستا انسخ الرابط القصير فقط بدون?stkn")
+    # رسالة الخطأ الحلوة الجديدة - صلحت كلمة حل
+    await msg.edit_text(
+        "❌ **عذراً يا غالي، ما قدرت حمل الرابط**\n\n"
+        "🔹 تأكد أن الحساب عام وليس خاص\n"
+        "🔹 انسخ الرابط القصير فقط بدون إضافات\n"
+        "🔹 جرب رابط تيك توك للتأكد أن البوت شغال\n\n"
+        "مثال للرابط الصح:\n"
+        "`https://www.instagram.com/p/DcoICWsl2Yk/`\n\n"
+        "@BotKanal24",
+        parse_mode="Markdown"
+    )
 
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
