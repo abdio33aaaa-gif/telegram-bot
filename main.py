@@ -1,14 +1,15 @@
 import telebot
 
-TOKEN = "حط توكن البوت الاساسي هون"
-CHANNEL = "@BotKanal24"  # قناتك
-8911586038:AAEJPLNv8dVdgKZL0n0qhqEMxvC9h_BeUp0
+# توكن البوت الاساسي - حطيت توكنك يلي بالصورة ولازم تحطو كامل
+TOKEN = "8911586038:AAEJPLNv8dVdgKZL0XXXXXXXXXX"  # كمل باقي التوكن هون
+CHANNEL = "@BotKanal24"
+
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['nshr'])
 def nshr_command(m):
     try:
-        text = """📢 اعلان هام لأعضاء مجتمعنا الكرام
+        text = """📢 اعلان هام لاعضاء مجتمعنا الكرام
 
 يسرنا ان نعلن انضمام بوت جديد لمساعدة البوت الاساسي 🤖
 
@@ -31,13 +32,4 @@ https://t.me/Storiesa6d_bot
 السيد عبد الملك 💙
 """
         bot.send_message(CHANNEL, text)
-        bot.reply_to(m, "✅ تم النشر بقناة @BotKanal24 بنجاح")
-    except Exception as e:
-        bot.reply_to(m, f"❌ خطأ: {e}\nتأكد البوت ادمن بقناة @BotKanal24")
-
-@bot.message_handler(commands=['start'])
-def start(m):
-    bot.reply_to(m, "اكتب /nshr لنشر الاعلان")
-
-print("Bot running for @BotKanal24")
-bot.infinity_polling()
+        bot.reply_to(m, "✅
