@@ -94,6 +94,38 @@ def handle_all(call):
     except Exception as e:
         print(e)
         bot.edit_message_text("❌ خطأ بالرابط، تأكد انو الرابط شغال وخاصية التحميل مدعومة", chat_id, call.message.message_id)
+@bot.message_handler(commands=['nshr'])
+def nshr_command(m):
+    current_bot = bot.get_me().username
+    if current_bot == "MyDownload2026_bot":
+        text = """📢 إعلان هام لأعضاء مجتمعنا الكرام
 
+يسرنا أن نعلن انضمام بوت جديد لمساعدة البوت الأساسي 🤖
+
+البوت المساعد الجديد: @Storiesa6d_bot
+🔗 https://t.me/Storiesa6d_bot
+
+البوت الأساسي: @MyDownload2026_bot
+🔗 https://t.me/MyDownload2026_bot
+
+الآن التحميل صار أسرع وأقوى!
+اذا كان البوت الأساسي مشغول، البوت الجديد جاهز يساعدكم فوراً.
+
+✅ نفس الميزات - نفس السرعة - نفس الجودة
+📥 تيك توك - انستا - فيسبوك - يوتيوب
+
+جربوا البوت الجديد الآن 👇
+https://t.me/Storiesa6d_bot
+
+مع تحيات المطور
+السيد عبد الملك 💙
+"""
+        bot.send_message(CHANNEL, text)
+        bot.reply_to(m, "✅ تم النشر بالقناة")
+    else:
+        bot.reply_to(m, "ℹ️ النشر بس من البوت الأساسي")
+
+print("Bot is running...")
+bot.infinity_polling()
 print("Bot is running...")
 bot.infinity_polling()
