@@ -16,15 +16,20 @@ def is_subscribed(user_id):
     try:
         member = bot.get_chat_member(CHANNEL, user_id)
         return member.status in ['member', 'administrator', 'creator']
-    except:
-        # اذا البوت مو أدمن بالقناة رح يرجع True مشان ما يعلق
-        return True
+    except Exception as e:
+        print(f"خطأ بفحص الاشتراك: {e} - تأكد البوت أدمن بالقناة!")
+        return False  # هيك رح يجبر الكل يشترك اذا البوت مو أدمن
 
 def send_force_sub(chat_id):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("📢 اشترك بقناتي أولاً", url=CHANNEL_LINK))
-    markup.add(types.InlineKeyboardButton("✅ اشتركت - جرب مرة تانية", callback_data="check_sub"))
-    bot.send_message(chat_id, f"⚠️ لازم تشترك بقناتنا أولاً مشان تقدر تحمل\n\nاشترك هون 👉 {CHANNEL_LINK}\nوبعدين ارجع اكتب /start", reply_markup=markup)
+    markup.add(types.InlineKeyboardButton("✅ اشتركت - اضغط هنا", callback_data="check_sub"))
+    bot.send_message(chat_id, 
+        f"⚠️ **لازم تشترك بقناتنا أولاً**\n\n"
+        f"القناة: {CHANNEL}\n"
+        f"اشترك من هون 👉 {CHANNEL_LINK}\n\n"
+        f"بعد الاشتراك اضغط **'اشتركت - اضغط هنا'**",
+        reply_markup=markup, parse_mode="Markdown")
 
 @bot.message_handler(commands=['start'])
 def start(m):
@@ -56,34 +61,39 @@ def handle_all(call):
 
     if call.data == "check_sub":
         if is_subscribed(user_id):
-            bot.edit_message_text("✅ تم الاشتراك، فيك تحمل هلق! ابعت الرابط", chat_id, call.message.message_id)
+            bot.edit_message_text("✅ تم الاشتراك بنجاح! هلا ابعت الرابط وبحملك فوراً", chat_id, call.message.message_id)
         else:
-            bot.answer_callback_query(call.id, "❌ لسا ما اشتركت!")
+            bot.answer_callback_query(call.id, "❌ لسا ما اشتركت! اشترك أولاً", show_alert=True)
         return
 
     if not is_subscribed(user_id):
-        bot.answer_callback_query(call.id, "اشترك أولاً!")
+        bot.answer_callback_query(call.id, "اشترك أولاً!", show_alert=True)
         send_force_sub(chat_id)
         return
 
     url = user_urls.get(chat_id)
     if not url: return
-    bot.edit_message_text("⏳ عم نزل...", chat_id, call.message.message_id)
+    bot.edit_message_text("⏳ عم نزل... ثواني", chat_id, call.message.message_id)
     try:
         if call.data == "video":
             fname = f"/tmp/{chat_id}.mp4"
             opts = {'format': 'mp4/best','outtmpl': fname,'quiet': True,'noplaylist': True,'overwrites': True}
             with yt_dlp.YoutubeDL(opts) as ydl: ydl.extract_info(url, download=True)
-            with open(fname,'rb') as f: bot.send_video(chat_id, f)
+            with open(fname,'rb') as f: bot.send_video(chat_id, f, caption="✅ تم التحميل عبر @Storiesa6d_bot")
         else:
             fname = f"/tmp/{chat_id}.mp3"
             opts = {'format': 'bestaudio/best','outtmpl': f"/tmp/{chat_id}.%(ext)s",'quiet': True,'noplaylist': True,'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],'overwrites': True}
             with yt_dlp.YoutubeDL(opts) as ydl: ydl.extract_info(url, download=True)
-            with open(fname,'rb') as f: bot.send_audio(chat_id, f)
-        if os.path.exists(fname): os.remove(fname)
+            with open(fname,'rb') as f: bot.send_audio(chat_id, f, caption="✅ تم التحميل عبر @Storiesa6d_bot")
+        
+        # تنظيف الملفات
+        for ext in ['.mp4','.mp3','.webm','.m4a']:
+            p = f"/tmp/{chat_id}{ext}"
+            if os.path.exists(p): os.remove(p)
         bot.delete_message(chat_id, call.message.message_id)
     except Exception as e:
         print(e)
-        bot.edit_message_text("❌ خطأ بالرابط", chat_id, call.message.message_id)
+        bot.edit_message_text("❌ خطأ بالرابط، تأكد انو الرابط شغال وخاصية التحميل مدعومة", chat_id, call.message.message_id)
 
+print("Bot is running...")
 bot.infinity_polling()
