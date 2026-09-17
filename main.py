@@ -2,7 +2,7 @@ import telebot
 
 TOKEN = "حط توكن البوت الاساسي هون"
 CHANNEL = "@BotKanal24"  # قناتك
-
+8911586038:AAEJPLNv8dVdgKZL0n0qhqEMxvC9h_BeUp0
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['nshr'])
