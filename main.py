@@ -1,35 +1,36 @@
 import telebot
+import threading
 
-TOKEN = "8911586038:AAEJPLNv8dVdgKZL0XXXXXXXXXX"  # كمل توكنك هون
-CHANNEL = "@BotKanal24"
+TOKEN1 = "8977024211:AAG3OD86xIdCl7t13Oalk_Fy7X8xG1ZAOJs"
+TOKEN2 = "8911586038:AAEJPLNv8dVdgKZL0n0qhqEMxvC9h_BeUp0"
 
-bot = telebot.TeleBot(TOKEN)
+bot1 = telebot.TeleBot(TOKEN1)
+bot2 = telebot.TeleBot(TOKEN2)
 
-@bot.message_handler(commands=['nshr'])
-def nshr_command(m):
-    try:
-        text = """📢 اعلان هام
+@bot1.message_handler(commands=['start'])
+def start1(m):
+    bot1.reply_to(m, "اهلا! ابعت رابط للتحميل")
 
-البوت المساعد الجديد: @Storiesa6d_bot
-https://t.me/Storiesa6d_bot
+@bot2.message_handler(commands=['start'])
+def start2(m):
+    bot2.reply_to(m, "اهلا! ابعت رابط للتحميل")
 
-البوت الاساسي: @MyDownload2026_bot
-https://t.me/MyDownload2026_bot
+@bot1.message_handler(func=lambda m: True)
+def handle1(m):
+    # هون حط كود التحميل تبعك القديم
+    bot1.reply_to(m, f"تم: {m.text}")
 
-التحميل صار اسرع!
-تيك توك - انستا - فيسبوك - يوتيوب
+@bot2.message_handler(func=lambda m: True)
+def handle2(m):
+    bot2.reply_to(m, f"تم: {m.text}")
 
-جربوه الآن
-https://t.me/Storiesa6d_bot
-"""
-        bot.send_message(CHANNEL, text)
-        bot.reply_to(m, "تم النشر")
-    except Exception as e:
-        bot.reply_to(m, f"خطا: {e}")
+def run_bot1():
+    print("Bot1 @MyDownload2026_bot running")
+    bot1.infinity_polling()
 
-@bot.message_handler(commands=['start'])
-def start(m):
-    bot.reply_to(m, "اكتب /nshr")
+def run_bot2():
+    print("Bot2 @Storiesa6d_bot running")
+    bot2.infinity_polling()
 
-print("Bot running")
-bot.infinity_polling()
+threading.Thread(target=run_bot1).start()
+threading.Thread(target=run_bot2).start()
