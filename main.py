@@ -3,7 +3,6 @@ from telebot import types
 import yt_dlp
 import instaloader
 
-# حط التوكنات الجديدة بعد ما تعمل revoke
 TOKEN1 = "TOKEN_JADID_1"
 TOKEN2 = "TOKEN_JADID_2"
 CHANNEL = "@BotKanal24"
@@ -14,13 +13,13 @@ STATS_FILE = "sources.json"
 
 def log_source(source):
     try:
-        with open(STATS_FILE, "r") as f:
+        with open(STATS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
     except:
         data = {}
     data[source] = data.get(source, 0) + 1
-    with open(STATS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    with open(STATS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 def get_source(text):
     parts = text.split()
@@ -50,9 +49,104 @@ def create_bot(TOKEN):
     def start(m):
         source = get_source(m.text)
         log_source(source)
+        name = m.from_user.first_name
+        txt = f"🌟 اهلا {name} 🌟\n━━━━━━━━━━━━━━━\n👑 بوت التحميل الاسطوري 👑\n🎬 تيك توك | 📸 انستا | 📘 فيسبوك | 🎥 يوتيوب\n💎 بدون علامة مائية - جودة عالية\n━━━━━━━━━━━━━━━"
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton('📢 اشترك بقناتنا', url=CHANNEL_LINK))
+        kb.add(types.InlineKeyboardButton('✅ تحققت', callback_data='check_sub'))
+        kb.add(types.InlineKeyboardButton('🔗 قناتنا الرسمية', url=CHANNEL_LINK))
+        bot.send_message(m.chat.id, txt, reply_markup=kb)
 
-        txt = f"""🌟 اهلا {m.from_user.first_name} 🌟
-━━━━━━━━━━━━━━━
-👑 بوت التحميل الاسطوري 👑
-🎬 تيك توك | 📸 انستا | 📘 فيسبوك | 🎥 يوتيوب
-💎
+    @bot.message_handler(commands=['stats'])
+    def stats(m):
+        try:
+            with open(STATS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            txt = "📊 من وين اجو المستخدمين:\n"
+            for k,v in data.items():
+                txt += f"{k}: {v}\n"
+            bot.send_message(m.chat.id, txt)
+        except:
+            bot.send_message(m.chat.id, "لسا ما في بيانات")
+
+    @bot.message_handler(func=lambda m: True)
+    def handle(m):
+        if 'http' not in m.text:
+            kb = types.InlineKeyboardMarkup()
+            kb.add(types.InlineKeyboardButton('قناتنا الرسمية', url=CHANNEL_LINK))
+            bot.reply_to(m, '❌ ابعت رابط صحيح', reply_markup=kb)
+            return
+        if not is_subscribed(bot, m.from_user.id):
+            kb = types.InlineKeyboardMarkup()
+            kb.add(types.InlineKeyboardButton('📢 اشترك اولا', url=CHANNEL_LINK))
+            kb.add(types.InlineKeyboardButton('✅ تحقق', callback_data='check_sub'))
+            bot.reply_to(m, 'يجب الاشتراك بالقناة اولا', reply_markup=kb)
+            return
+        user_links[m.from_user.id] = m.text.strip()
+        kb = types.InlineKeyboardMarkup(row_width=2)
+        kb.add(types.InlineKeyboardButton('فيديو 🎬', callback_data='video'), types.InlineKeyboardButton('موسيقى 🎵', callback_data='audio'))
+        kb.add(types.InlineKeyboardButton('📸 صور البوست', callback_data='photo'))
+        kb.add(types.InlineKeyboardButton('قناتنا الرسمية', url=CHANNEL_LINK))
+        bot.reply_to(m, '✅ اختر نوع التحميل:', reply_markup=kb)
+
+    @bot.callback_query_handler(func=lambda call: True)
+    def cb(call):
+        if call.data == 'check_sub':
+            if is_subscribed(bot, call.from_user.id):
+                bot.answer_callback_query(call.id, 'تم الاشتراك ✅')
+                kb = types.InlineKeyboardMarkup()
+                kb.add(types.InlineKeyboardButton('قناتنا الرسمية', url=CHANNEL_LINK))
+                bot.send_message(call.message.chat.id, '✅ تم! ابعت الرابط الآن', reply_markup=kb)
+            else:
+                bot.answer_callback_query(call.id, 'لم تشترك بعد ❌')
+            return
+        url = user_links.get(call.from_user.id)
+        if not url:
+            bot.answer_callback_query(call.id, 'ابعت الرابط اولا')
+            return
+        bot.answer_callback_query(call.id, 'جاري التحميل...')
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton('قناتنا الرسمية', url=CHANNEL_LINK))
+        bot.send_message(call.message.chat.id, '⏳ جاري التحميل لا تغادر...', reply_markup=kb)
+        fid = call.from_user.id
+        clean_tmp(fid)
+        try:
+            if call.data == 'photo':
+                short = re.search(r'/(p|reel|tv)/([^/?&]+)', url)
+                if not short:
+                    bot.send_message(call.message.chat.id, '❌ رابط غلط', reply_markup=kb)
+                    return
+                code = short.group(2)
+                L = instaloader.Instaloader(dirname_pattern=f'/tmp/{fid}_post', save_metadata=False, download_comments=False, download_geotags=False)
+                L.download_pictures = True
+                L.download_videos = False
+                post = instaloader.Post.from_shortcode(L.context, code)
+                L.download_post(post, target=f'{fid}_post')
+                folder = f'/tmp/{fid}_post'
+                if os.path.exists(folder):
+                    files = [os.path.join(folder,f) for f in os.listdir(folder) if f.endswith(('.jpg','.jpeg','.png'))]
+                    for fl in files:
+                        bot.send_photo(call.message.chat.id, open(fl,'rb'), reply_markup=kb)
+                clean_tmp(fid)
+            elif call.data == 'video':
+                opts = {'outtmpl': f'/tmp/{fid}.mp4', 'format': 'best[ext=mp4]/best', 'quiet': True, 'no_warnings': True}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([url])
+                bot.send_video(call.message.chat.id, open(f'/tmp/{fid}.mp4','rb'), caption='🎬 تم التحميل', reply_markup=kb)
+                os.remove(f'/tmp/{fid}.mp4')
+            else:
+                opts = {'outtmpl': f'/tmp/{fid}.%(ext)s', 'format': 'bestaudio[ext=m4a]/bestaudio/best', 'quiet': True, 'no_warnings': True}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([url])
+                fpath = glob.glob(f'/tmp/{fid}.*')[0]
+                bot.send_audio(call.message.chat.id, open(fpath,'rb'), caption='🎵 تم التحميل', reply_markup=kb)
+                os.remove(fpath)
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f'❌ خطأ: {e}', reply_markup=kb)
+    return bot
+
+bot1 = create_bot(TOKEN1)
+bot2 = create_bot(TOKEN2)
+threading.Thread(target=lambda: bot1.infinity_polling(skip_pending=True)).start()
+threading.Thread(target=lambda: bot2.infinity_polling(skip_pending=True)).start()
+print("Bots running...")
