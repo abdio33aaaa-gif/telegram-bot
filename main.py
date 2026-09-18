@@ -1,5 +1,4 @@
-import json
-STATS_FILE = "sources.json"import telebot, threading, os, re, glob, shutil, time
+import telebot, threading, os, re, glob, shutil, time, json
 from telebot import types
 import yt_dlp
 import instaloader
@@ -23,11 +22,43 @@ def create_bot(TOKEN):
 
     @bot.message_handler(commands=['start'])
     def start(m):
-        txt = "🌟 اهلا " + m.from_user.first_name + " | ALBASHA 🌟\n👑 بوت التحميل الاسطوري 👑\n🎬 تيك توك | 📸 انستا | 📘 فيسبوك | 🎥 يوتيوب"
+        # --- احصائيات ---
+        try:
+            src = m.text.split()[1].lower() if len(m.text.split())>1 else "direct"
+        except:
+            src = "direct"
+        try:
+            with open("/tmp/sources.json","r", encoding="utf-8") as f:
+                data = json.load(f)
+        except:
+            data = {}
+        data[src] = data.get(src, 0) + 1
+        with open("/tmp/sources.json","w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        # --- نهاية احصائيات ---
+
+        txt = "🌟 اهلا " + m.from_user.first_name + " | ALBASHA | البَاشَا 🌟\n👑 بوت التحميل الاسطوري 👑\n🎬 تيك توك | 📸 انستا | 📘 فيسبوك | يوتيوب"
         kb = types.InlineKeyboardMarkup()
         kb.add(types.InlineKeyboardButton('📢 اشترك بقناتنا', url=CHANNEL_LINK))
         kb.add(types.InlineKeyboardButton('✅ تحققت', callback_data='check_sub'))
         bot.send_message(m.chat.id, txt, reply_markup=kb)
+
+    @bot.message_handler(commands=['stats'])
+    def stats(m):
+        try:
+            with open("/tmp/sources.json","r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not data:
+                bot.send_message(m.chat.id, "لسا ما في بيانات")
+                return
+            msg = "📊 احصائيات المصادر:\n"
+            total = sum(data.values())
+            for k,v in sorted(data.items(), key=lambda x: x[1], reverse=True):
+                msg += f"- {k}: {v}\n"
+            msg += f"الكل: {total}"
+            bot.send_message(m.chat.id, msg)
+        except Exception as e:
+            bot.send_message(m.chat.id, "لسا ما في بيانات")
 
     @bot.message_handler(func=lambda m: 'http' in m.text)
     def handle(m):
@@ -35,67 +66,58 @@ def create_bot(TOKEN):
             kb = types.InlineKeyboardMarkup()
             kb.add(types.InlineKeyboardButton('📢 اشترك اولا', url=CHANNEL_LINK))
             kb.add(types.InlineKeyboardButton('✅ تحقق', callback_data='check_sub'))
-            bot.reply_to(m, '❌ اشترك بالقناة اولا', reply_markup=kb)
+            bot.reply_to(m, '❌ اشترك اولا', reply_markup=kb)
             return
         user_links[m.from_user.id] = m.text.strip()
         kb = types.InlineKeyboardMarkup(row_width=2)
         kb.add(types.InlineKeyboardButton('فيديو 🎬', callback_data='video'), types.InlineKeyboardButton('صوت 🎵', callback_data='audio'))
         kb.add(types.InlineKeyboardButton('📸 صور', callback_data='photo'))
-        bot.reply_to(m, '✅ اختر نوع التحميل:', reply_markup=kb)
+        bot.reply_to(m, '✅ اختر:', reply_markup=kb)
 
     @bot.callback_query_handler(func=lambda call: True)
     def cb(call):
         if call.data == 'check_sub':
             if is_subscribed(bot, call.from_user.id):
                 bot.answer_callback_query(call.id, 'تم ✅')
-                bot.send_message(call.message.chat.id, '✅ تمام! ابعت الرابط')
+                bot.send_message(call.message.chat.id, 'تم ✅ ابعت الرابط')
             else:
                 bot.answer_callback_query(call.id, 'ما اشتركت ❌')
             return
-
         url = user_links.get(call.from_user.id)
-        if not url:
-            return
+        if not url: return
         fid = str(call.from_user.id)
-        tmp_video = os.path.join("/tmp", fid + ".mp4")
-        tmp_audio = os.path.join("/tmp", fid + ".m4a")
-        tmp_post = os.path.join("/tmp", fid + "_post")
-
         try:
             if call.data == 'video':
-                opts = {'outtmpl': tmp_video, 'format': 'best[ext=mp4]/best', 'quiet': True}
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
-                bot.send_video(call.message.chat.id, open(tmp_video,'rb'))
-                if os.path.exists(tmp_video): os.remove(tmp_video)
-
+                out = os.path.join("/tmp", fid + ".mp4")
+                opts = {'outtmpl': out, 'format': 'best[ext=mp4]/best', 'quiet': True}
+                with yt_dlp.YoutubeDL(opts) as ydl: ydl.download([url])
+                bot.send_video(call.message.chat.id, open(out,'rb'))
+                if os.path.exists(out): os.remove(out)
             elif call.data == 'audio':
-                opts = {'outtmpl': tmp_audio, 'format': 'bestaudio/best', 'quiet': True}
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
-                # يدور على اي ملف نزل
+                out = os.path.join("/tmp", fid + ".m4a")
+                opts = {'outtmpl': out, 'format': 'bestaudio/best', 'quiet': True}
+                with yt_dlp.YoutubeDL(opts) as ydl: ydl.download([url])
                 files = glob.glob(os.path.join("/tmp", fid + ".*"))
                 if files:
                     bot.send_audio(call.message.chat.id, open(files[0],'rb'))
-                    os.remove(files[0])
-
-            else: # صور
+                    for ff in files:
+                        if os.path.exists(ff): os.remove(ff)
+            else:
                 short = re.search(r'/(p|reel|tv)/([^/?&]+)', url)
+                if not short: return
                 code = short.group(2)
-                if os.path.exists(tmp_post):
-                    shutil.rmtree(tmp_post, ignore_errors=True)
-                L = instaloader.Instaloader(dirname_pattern=tmp_post, save_metadata=False, download_comments=False, download_geotags=False)
+                folder = os.path.join("/tmp", fid + "_post")
+                if os.path.exists(folder): shutil.rmtree(folder, ignore_errors=True)
+                L = instaloader.Instaloader(dirname_pattern=folder, save_metadata=False, download_comments=False, download_geotags=False)
                 post = instaloader.Post.from_shortcode(L.context, code)
                 L.download_post(post, target=fid + "_post")
-                if os.path.exists(tmp_post):
-                    for fl in os.listdir(tmp_post):
+                if os.path.exists(folder):
+                    for fl in os.listdir(folder):
                         if fl.endswith(('.jpg','.jpeg','.png')):
-                            bot.send_photo(call.message.chat.id, open(os.path.join(tmp_post,fl),'rb'))
-                    shutil.rmtree(tmp_post, ignore_errors=True)
-
+                            bot.send_photo(call.message.chat.id, open(os.path.join(folder,fl),'rb'))
+                    shutil.rmtree(folder, ignore_errors=True)
         except Exception as e:
-            bot.send_message(call.message.chat.id, "❌ خطأ: " + str(e))
-
+            bot.send_message(call.message.chat.id, "❌ " + str(e))
     return bot
 
 def run_bot(token):
@@ -104,8 +126,7 @@ def run_bot(token):
 
 if TOKEN1:
     threading.Thread(target=run_bot, args=(TOKEN1,)).start()
-
-if TOKEN2 and TOKEN2!= TOKEN1 and ":" in TOKEN2:
+if TOKEN2 and TOKEN2!= TOKEN1 and TOKEN2 and ":" in TOKEN2:
     threading.Thread(target=run_bot, args=(TOKEN2,)).start()
 
 while True:
