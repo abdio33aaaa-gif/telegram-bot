@@ -1,4 +1,5 @@
-import telebot, threading, os, re, glob, shutil, time
+import json
+STATS_FILE = "sources.json"import telebot, threading, os, re, glob, shutil, time
 from telebot import types
 import yt_dlp
 import instaloader
