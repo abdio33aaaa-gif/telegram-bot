@@ -1,64 +1,46 @@
-import telebot
+import os, telebot
 from telebot import types
-import os
 import yt_dlp
 
 TOKEN = os.getenv("TOKEN")
 CHANNEL = "@BotKanal24"
 CHANNEL_LINK = "https://t.me/BotKanal24"
-
 bot = telebot.TeleBot(TOKEN)
 
-WELCOME = "اهلا 😍\n\nابعت رابط وخلّي الباقي عليي 🚀\nتيك توك - انستا - فيسبوك - يوتيوب\nبدون علامة مائية ✨"
+WELCOME = "اهلا 😍\n\nابعت رابط وخلّي الباقي عليي 🚀\nتيك توك - انستا - فيسبوك - يوتيوب"
 
-def is_subscribed(user_id):
+def is_subscribed(uid):
     try:
-        m = bot.get_chat_member(CHANNEL, user_id)
+        m = bot.get_chat_member(CHANNEL, uid)
         return m.status in ['member','administrator','creator']
     except:
         return True
 
 @bot.message_handler(commands=['start'])
-def start(message):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("📢 قناتنا", url=CHANNEL_LINK))
-    bot.send_message(message.chat.id, WELCOME, reply_markup=markup)
+def start(m):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("📢 قناتنا", url=CHANNEL_LINK))
+    bot.send_message(m.chat.id, WELCOME, reply_markup=kb)
 
 @bot.message_handler(func=lambda m: True)
-def handle(message):
-    url = message.text.strip()
+def handle(m):
+    url = m.text.strip()
     if "http" not in url:
-        bot.reply_to(message, "📥 ابعت رابط بس")
         return
-    if not is_subscribed(message.from_user.id):
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 اشترك بالقناة", url=CHANNEL_LINK))
-        markup.add(types.InlineKeyboardButton("✅ تحققت", callback_data="check"))
-        bot.reply_to(message, "اشترك ثانية وحدة بس 👇\n" + CHANNEL_LINK, reply_markup=markup)
+    if not is_subscribed(m.from_user.id):
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("📢 اشترك", url=CHANNEL_LINK))
+        kb.add(types.InlineKeyboardButton("✅ تحققت", callback_data="check"))
+        bot.reply_to(m, f"اشترك ثانية بس 👇\n{CHANNEL_LINK}", reply_markup=kb)
         return
-    status = bot.reply_to(message, "⏳ عم حملو...")
-    path = f"/tmp/{message.from_user.id}.mp4"
-    opts = {'outtmpl': path, 'format': 'best[ext=mp4]/best', 'quiet': True, 'noplaylist': True}
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 @BotKanal24", url=CHANNEL_LINK))
-        with open(path, 'rb') as f:
-            bot.send_video(message.chat.id, f, caption="تم ✅", reply_markup=markup)
-        bot.delete_message(message.chat.id, status.message_id)
-        if os.path.exists(path):
-            os.remove(path)
-    except:
-        bot.edit_message_text("❌ ما قدرت حملو، تأكد الرابط عام", message.chat.id, status.message_id)
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback(call):
-    if call.data == "check":
-        if is_subscribed(call.from_user.id):
-            bot.answer_callback_query(call.id, "تم ✅")
-            bot.send_message(call.message.chat.id, "عاش! ابعت الرابط 🚀")
-        else:
-            bot.answer_callback_query(call.id, "لسه ما اشتركت ❌", show_alert=True)
+    stat = bot.reply_to(m, "⏳ عم حملو... لا تغادر")
+    path = f"/tmp/{m.from_user.id}.mp4"
 
-bot.infinity_polling(skip_pending=True)
+    # اعدادات جديدة بتحل مشكلة يوتيوب
+    opts = {
+        'outtmpl': path,
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'merge_output_format': 'mp4',
+        'quiet': True,
+       
