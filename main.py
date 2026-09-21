@@ -1,4 +1,4 @@
-import os, telebot, glob
+import os, telebot, glob, re, requests
 from telebot import types
 import yt_dlp
 
@@ -15,6 +15,10 @@ def is_subscribed(uid):
         return m.status in ['member','administrator','creator']
     except:
         return True
+
+def get_yt_id(url):
+    m = re.search(r'(?:youtu\.be/|v=)([A-Za-z0-9_-]{11})', url)
+    return m.group(1) if m else None
 
 @bot.message_handler(commands=['start'])
 def start(m):
@@ -37,27 +41,62 @@ def handle(m):
         try: os.remove(f)
         except: pass
 
+    # المحاولة 1: الطريقة العادية (بتشتغل لفيسبوك وتيك توك وانستا)
     opts = {
         "outtmpl": f"/tmp/{m.from_user.id}.%(ext)s",
         "format": "best[ext=mp4]/best",
         "quiet": True,
         "noplaylist": True,
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
+    if os.path.exists("cookies.txt"):
+        opts["cookiefile"] = "cookies.txt"
 
+    file = None
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             file = ydl.prepare_filename(info)
             if not os.path.exists(file):
-                file = glob.glob(f"/tmp/{m.from_user.id}.*")[0]
-
-        with open(file, 'rb') as f:
-            bot.send_video(m.chat.id, f, caption="تم ✅ @BotKanal24")
-        bot.delete_message(m.chat.id, s.message_id)
-        os.remove(file)
+                files = glob.glob(f"/tmp/{m.from_user.id}.*")
+                file = files[0] if files else None
     except Exception as e:
-        print(e)
-        bot.edit_message_text("❌ ما قدرت حملو", m.chat.id, s.message_id)
+        print("YT-DLP FAIL:", e)
+        # المحاولة 2: لليوتيوب فقط - عن طريق Piped
+        yt_id = get_yt_id(url)
+        if yt_id:
+            try:
+                bot.edit_message_text("⏳ عم جرب طريقة تانية لليوتيوب...", m.chat.id, s.message_id)
+                # نجيب رابط مباشر من Piped
+                r = requests.get(f"https://api.piped.private.coffee/streams/{yt_id}", timeout=15).json()
+                # ناخد احسن جودة mp4
+                streams = r.get("videoStreams", []) or r.get("audioStreams", [])
+                best = None
+                for st in r.get("videoStreams", []):
+                    if st.get("mimeType") == "video/mp4":
+                        best = st["url"]
+                        break
+                if best:
+                    # نحمل الملف
+                    file_path = f"/tmp/{m.from_user.id}.mp4"
+                    with requests.get(best, stream=True, timeout=30) as rr:
+                        with open(file_path, 'wb') as f:
+                            for chunk in rr.iter_content(1024*1024):
+                                f.write(chunk)
+                    file = file_path
+            except Exception as e2:
+                print("PIPED FAIL:", e2)
+
+    try:
+        if file and os.path.exists(file):
+            with open(file, 'rb') as f:
+                bot.send_video(m.chat.id, f, caption="تم ✅ @BotKanal24")
+            bot.delete_message(m.chat.id, s.message_id)
+            os.remove(file)
+        else:
+            bot.edit_message_text("❌ ما قدرت حلو، يوتيوب حاظر السيرفر حاليا، جرب تيك توك او فيسبوك بيشتغلو فورا", m.chat.id, s.message_id)
+    except Exception as e:
+        bot.edit_message_text(f"❌ خطأ: {e}", m.chat.id, s.message_id)
 
 @bot.callback_query_handler(func=lambda c: True)
 def cb(c):
