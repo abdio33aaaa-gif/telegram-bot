@@ -1,155 +1,88 @@
+import os
+import asyncio
 from flask import Flask
 from threading import Thread
+import yt_dlp
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-app = Flask(__name__)
+# =========== الاعدادات ===========
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "ALBASHA") # غيرها ليوزر قناتك بدون @
+CHANNEL_LINK = f"https://t.me/{CHANNEL_USERNAME}"
+
+# =========== سيرفر مشان UptimeRobot ===========
+app = Flask('')
 @app.route('/')
 def home():
-    return "Bot is alive!"
+    return "Bot is Alive!"
 
 def run():
     app.run(host='0.0.0.0', port=8080)
 
-Thread(target=run).start()
-import os, telebot, glob, re, requests
-from telebot import types
-import yt_dlp
-from flask import Flask
-import threading
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
-TOKEN = os.getenv("TOKEN")
-CHANNEL = "@BotKanal24"
-CHANNEL_LINK = "https://t.me/BotKanal24"
-bot = telebot.TeleBot(TOKEN)
-
-WELCOME = "اهلا ابعت رابط وخلي الباقي عليي"
-
-# مشان Render يصير اخضر Deployed
-app = Flask(__name__)
-@app.route('/')
-def home():
-    return "Bot is running @BotKanal24"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-threading.Thread(target=run_flask, daemon=True).start()
-
-PIPED_APIS = [
-    "https://pipedapi.kavin.rocks",
-    "https://pipedapi.adminforge.de",
-    "https://api.piped.private.coffee"
-]
-
-def clean_url(url):
-    # نشيل?img_index=2 و?cplk و كل البرامترات يلي بتخرب الانستا
-    url = url.split('?')[0]
-    return url.strip()
-
-def is_subscribed(uid):
+# =========== فحص الاشتراك الاجباري ===========
+async def is_subscribed(user_id, context):
     try:
-        m = bot.get_chat_member(CHANNEL, uid)
-        return m.status in ['member', 'administrator', 'creator']
-    except Exception:
-        return True
+        member = await context.bot.get_chat_member(f"@{CHANNEL_USERNAME}", user_id)
+        return member.status in ['member', 'administrator', 'creator']
+    except:
+        return True # اذا ما قدر يفحص خليه يمرق
 
-def get_yt_id(url):
-    m = re.search(r'(?:youtu\.be/|shorts/|v=)([A-Za-z0-9_-]{11})', url)
-    return m.group(1) if m else None
-
-def download_via_piped(yt_id, user_id):
-    for api in PIPED_APIS:
-        try:
-            r = requests.get(f"{api}/streams/{yt_id}", timeout=15).json()
-            if "videoStreams" not in r:
-                continue
-            best = None
-            for st in r["videoStreams"]:
-                mime = st.get("mimeType", "")
-                if "mp4" in mime and not st.get("videoOnly"):
-                    best = st["url"]
-                    break
-            if not best:
-                best = r["videoStreams"][0]["url"]
-            file_path = f"/tmp/{user_id}.mp4"
-            with requests.get(best, stream=True, timeout=60, headers={"User-Agent": "Mozilla/5.0"}) as rr:
-                rr.raise_for_status()
-                with open(file_path, 'wb') as f:
-                    for chunk in rr.iter_content(1024*1024):
-                        if chunk:
-                            f.write(chunk)
-            if os.path.getsize(file_path) > 10000:
-                return file_path
-        except Exception as e:
-            print(f"PIPED {api} FAIL:", e)
-            continue
-    return None
-
-@bot.message_handler(commands=['start'])
-def start(m):
-    bot.send_message(m.chat.id, WELCOME)
-
-@bot.message_handler(func=lambda m: True)
-def handle(m):
-    raw_url = m.text.strip()
-    if "http" not in raw_url:
+# =========== رسالة الترحيب الجديدة ===========
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    keyboard = [
+        [InlineKeyboardButton("📢 اشترك بالقناة", url=CHANNEL_LINK)],
+        [InlineKeyboardButton("✅ تحققت من الاشتراك", callback_data="check_sub")]
+    ]
+    # بنعمل فحص اول
+    if not await is_subscribed(user.id, context):
+        await update.message.reply_text(
+            f"أهلاً {user.first_name} 👋\n\n"
+            f"⚠️ يجب الاشتراك في قناتنا أولاً لتستخدم البوت\n\n"
+            f"اشترك وبعدين اضغط تحققت",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return
-    url = clean_url(raw_url) # هون مننضف الرابط
 
-    if not is_subscribed(m.from_user.id):
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("اشترك", url=CHANNEL_LINK))
-        kb.add(types.InlineKeyboardButton("تحققت", callback_data="check"))
-        bot.reply_to(m, "اشترك ثانية بس", reply_markup=kb)
+    await update.message.reply_text(
+        f"أهلاً وسهلاً {user.first_name} يا باشا 👑\n\n"
+        f"🚀 **بوت تحميل الباشا - أسرع بوت تحميل**\n\n"
+        f"📥 يدعم:\n"
+        f"• يوتيوب (فيديو - صوت)\n"
+        f"• تيك توك - انستا - فيسبوك\n\n"
+        f"👇 فقط أرسل رابط الفيديو ورح حملو فوراً\n\n"
+        f"المطور: @{CHANNEL_USERNAME}"
+    )
+
+# =========== تحميل الفيديو - محدث لفك حظر يوتيوب ===========
+async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    url = update.message.text.strip()
+
+    # فحص الاشتراك
+    if not await is_subscribed(user_id, context):
+        keyboard = [[InlineKeyboardButton("📢 اشترك بالقناة", url=CHANNEL_LINK)]]
+        await update.message.reply_text(
+            "❌ يجب الاشتراك بالقناة أولاً",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return
-    s = bot.reply_to(m, "عم حملو...")
-    for f in glob.glob(f"/tmp/{m.from_user.id}.*"):
-        try:
-            os.remove(f)
-        except Exception:
-            pass
-    opts = {
-        "outtmpl": f"/tmp/{m.from_user.id}.%(ext)s",
-        "format": "best[ext=mp4]/best",
-        "quiet": True,
-        "noplaylist": True,
-        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
-    }
-    if os.path.exists("cookies.txt"):
-        opts["cookiefile"] = "cookies.txt"
-    file = None
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            file = ydl.prepare_filename(info)
-            if not os.path.exists(file):
-                files = glob.glob(f"/tmp/{m.from_user.id}.*")
-                file = files[0] if files else None
-    except Exception as e:
-        print("YT-DLP FAIL:", e)
-        yt_id = get_yt_id(url)
-        if yt_id:
-            try:
-                bot.edit_message_text("عم جرب طريقة تانية...", m.chat.id, s.message_id)
-                file = download_via_piped(yt_id, m.from_user.id)
-            except Exception as e2:
-                print("PIPED ALL FAIL:", e2)
-    try:
-        if file and os.path.exists(file):
-            with open(file, 'rb') as f:
-                bot.send_video(m.chat.id, f, caption="تم @BotKanal24")
-            bot.delete_message(m.chat.id, s.message_id)
-            os.remove(file)
-        else:
-            bot.edit_message_text("ما قدرت حملو، جرب رابط تاني", m.chat.id, s.message_id)
-    except Exception as e:
-        bot.edit_message_text(f"خطأ: {e}", m.chat.id, s.message_id)
 
-@bot.callback_query_handler(func=lambda c: True)
-def cb(c):
-    if is_subscribed(c.from_user.id):
-        bot.send_message(c.message.chat.id, "تم! ابعت الرابط هلق")
-    else:
-        bot.answer_callback_query(c.id, "لسه ما اشتركت", show_alert=True)
+    if "http" not in url:
+        return
 
-bot.infinity_polling()
+    msg = await update.message.reply_text("⏳ عم حمل... ثواني يا باشا...")
+
+    ydl_opts = {
+        'format': 'best[ext=mp4]/bestaudio[ext=m4a]/best',
+        'outtmpl': '%(title)s.%(ext)s',
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'extractor_args': {
+           
