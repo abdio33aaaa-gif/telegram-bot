@@ -1,19 +1,38 @@
 import os, telebot, glob, re, requests
 from telebot import types
 import yt_dlp
+from flask import Flask
+import threading
 
 TOKEN = os.getenv("TOKEN")
 CHANNEL = "@BotKanal24"
 CHANNEL_LINK = "https://t.me/BotKanal24"
 bot = telebot.TeleBot(TOKEN)
 
-WELCOME = "اهلا ابعت رابط وخلّي الباقي عليي"
+WELCOME = "اهلا ابعت رابط وخلي الباقي عليي"
+
+# مشان Render يصير اخضر Deployed
+app = Flask(__name__)
+@app.route('/')
+def home():
+    return "Bot is running @BotKanal24"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+threading.Thread(target=run_flask, daemon=True).start()
 
 PIPED_APIS = [
     "https://pipedapi.kavin.rocks",
     "https://pipedapi.adminforge.de",
     "https://api.piped.private.coffee"
 ]
+
+def clean_url(url):
+    # نشيل?img_index=2 و?cplk و كل البرامترات يلي بتخرب الانستا
+    url = url.split('?')[0]
+    return url.strip()
 
 def is_subscribed(uid):
     try:
@@ -60,9 +79,11 @@ def start(m):
 
 @bot.message_handler(func=lambda m: True)
 def handle(m):
-    url = m.text.strip()
-    if "http" not in url:
+    raw_url = m.text.strip()
+    if "http" not in raw_url:
         return
+    url = clean_url(raw_url) # هون مننضف الرابط
+
     if not is_subscribed(m.from_user.id):
         kb = types.InlineKeyboardMarkup()
         kb.add(types.InlineKeyboardButton("اشترك", url=CHANNEL_LINK))
