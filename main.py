@@ -1,4 +1,5 @@
 import os
+import time
 from flask import Flask
 from threading import Thread
 from telegram import Update
@@ -23,10 +24,8 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# شغل Flask بثريد ثاني
 Thread(target=run_flask, daemon=True).start()
 
-# شغل البوت بالثريد الرئيسي
 if TOKEN:
     print("Starting bot polling...")
     application = Application.builder().token(TOKEN).build()
@@ -35,6 +34,6 @@ if TOKEN:
     print("Bot is running!")
     application.run_polling(drop_pending_updates=True)
 else:
-    print("ERROR: BOT_TOKEN missing")
-    # خلي Flask شغال لو ما في توكن
-    run_flask()
+    print("ERROR: BOT_TOKEN missing - check Render Environment")
+    while True:
+        time.sleep(3600)
