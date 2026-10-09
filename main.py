@@ -1,47 +1,29 @@
-import os, sys
+import os
+import threading
 from flask import Flask
-from threading import Thread
-import yt_dlp
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHANNEL_USERNAME = "BotKanal24"
-CHANNEL_LINK = f"https://t.me/{CHANNEL_USERNAME}"
+TOKEN = os.getenv("BOT_TOKEN")
+print(f"TOKEN FOUND: {bool(TOKEN)}")
 
-print(f"TOKEN FOUND: {bool(BOT_TOKEN)}", flush=True)
-if BOT_TOKEN:
-    print(f"TOKEN STARTS WITH: {BOT_TOKEN[:10]}...", flush=True)
+app = Flask(__name__)
 
-app = Flask('')
 @app.route('/')
-def home(): return "Bot is Alive! Go to Telegram"
-def run():
-    port = int(os.environ.get("PORT", 10000))
-    print(f"Starting Flask on {port}", flush=True)
-    app.run(host='0.0.0.0', port=port)
-def keep_alive():
-    Thread(target=run).start()
+def home():
+    return "Bot is running!"
 
-# ... نفس دوال start و check_callback و downloader تبعك خليها ...
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("اهلا! ابعتلي رابط تيك توك او انستا او فيسبوك 🎥")
 
-if __name__ == '__main__':
-    if not BOT_TOKEN:
-        print("ERROR: BOT_TOKEN NOT SET!", flush=True)
-        keep_alive()
-        while True: pass
-    else:
-        print("Starting bot polling...", flush=True)
-        keep_alive()
-        try:
-            bot = ApplicationBuilder().token(BOT_TOKEN).build()
-            # ضيف الهاندلرز تبعك هون
-            bot.add_handler(CommandHandler("start", start))
-            bot.add_handler(CallbackQueryHandler(check_callback))
-            bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, downloader))
-            print("Bot handlers added, polling...", flush=True)
-            bot.run_polling()
-        except Exception as e:
-            print(f"CRITICAL BOT ERROR: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
+async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"استلمت الرابط: {update.message.text}\nجاري التحميل... (هون بتحط كود التحميل)")
+
+def run_bot():
+    if not TOKEN:
+        print("ERROR: BOT_TOKEN not set in Render Environment!")
+        return
+    print("Starting bot polling...")
+    application = Application.builder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters
