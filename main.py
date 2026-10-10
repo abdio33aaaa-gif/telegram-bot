@@ -1,8 +1,7 @@
-import os, asyncio, threading, tempfile, requests, json
+import os, threading, requests, tempfile
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-import yt_dlp
 
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL = "@BotKanal24"
@@ -10,7 +9,7 @@ LINK = "https://t.me/BotKanal24"
 
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Bot Running - V7 TikWM"
+def home(): return "Bot V9 - TikTok Fixed"
 
 async def is_sub(bot, uid):
     try:
@@ -21,7 +20,7 @@ async def is_sub(bot, uid):
 def kb():
     return InlineKeyboardMarkup([[InlineKeyboardButton("📢 اشترك بالقناة", url=LINK)],[InlineKeyboardButton("✅ تحققت", callback_data="check")]])
 
-WELCOME = "🚀 بوت التحميل السريع 2026\n\n⚡️ يحمل من:\n- TikTok بدون علامة\n- Instagram Reels & Story\n- Facebook\n- YouTube MP4/MP3\n\n📎 ارسل الرابط الآن ليبدأ التحميل\n\n👨‍💻 @BotKanal24"
+WELCOME = "🚀 بوت التحميل السريع 2026\n\n- TikTok بدون علامة\n- Instagram\n- Facebook\n- YouTube\n\n📎 ارسل الرابط الآن\n\n👨‍💻 @BotKanal24"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_sub(context.bot, update.effective_user.id):
@@ -41,83 +40,79 @@ async def down(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     if "http" not in url: return
 
-    msg = await update.message.reply_text("⚡️ ثانية... بجيب الرابط")
+    msg = await update.message.reply_text("⚡️ ثانية...")
     await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
 
-    async def keep_typing():
-        while True:
-            try:
-                await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
-                await asyncio.sleep(3)
-            except: break
-    task = asyncio.create_task(keep_typing())
-
     try:
-        with tempfile.TemporaryDirectory() as tmp:
-            video_file = None
-
-            # --- للتيك توك: استخدم tikwm API (شغال مع vm.tiktok) ---
-            if "tiktok.com" in url:
+        # --- تيك توك: فقط tikwm بدون yt-dlp ---
+        if "tiktok.com" in url:
+            # 1. فك رابط vm
+            original_url = url
+            if "vm.tiktok.com" in url or "vt.tiktok.com" in url:
                 try:
-                    # فك رابط vm
-                    if "vm.tiktok.com" in url or "vt.tiktok.com" in url:
-                        try:
-                            r = requests.get(url, allow_redirects=True, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
-                            url = r.url
-                        except: pass
-
-                    print(f"Trying tikwm for {url}")
-                    api_res = requests.post(
-                        "https://www.tikwm.com/api/",
-                        data={"url": url, "count": 12, "cursor": 0, "web": 1, "hd": 1},
-                        headers={"User-Agent":"Mozilla/5.0","Referer":"https://www.tikwm.com/"},
-                        timeout=20
-                    )
-                    j = api_res.json()
-                    print(j)
-                    if j.get("code") == 0 and j.get("data") and j["data"].get("play"):
-                        direct = j["data"]["play"]
-                        # احيانا بيرجع بدون https
-                        if direct.startswith("//"): direct = "https:" + direct
-                        video_file = os.path.join(tmp, "tt.mp4")
-                        vd = requests.get(direct, headers={"User-Agent":"Mozilla/5.0"}, timeout=40, stream=True)
-                        with open(video_file, 'wb') as f:
-                            for chunk in vd.iter_content(1024*1024):
-                                f.write(chunk)
-                        print("TikWM success")
-                    else:
-                        print(f"TikWM fail response: {j}")
+                    r = requests.get(url, allow_redirects=True, timeout=15, headers={"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"})
+                    url = r.url
+                    print(f"Expanded {original_url} -> {url}")
                 except Exception as e:
-                    print(f"TikWM exception: {e}")
+                    print(f"Expand fail: {e}")
 
-            # --- اذا مو تيك توك او فشل API جرب yt-dlp ---
-            if not video_file or not os.path.exists(video_file) or os.path.getsize(video_file) < 10000:
-                print("Fallback to yt-dlp")
-                opts = {'outtmpl': os.path.join(tmp, 'video.%(ext)s'), 'format': 'best[ext=mp4]/best', 'quiet': True, 'noplaylist': True, 'no_warnings': True}
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    video_file = ydl.prepare_filename(info)
+            # 2. جيب رابط التحميل من tikwm
+            print(f"Calling tikwm for {url}")
+            resp = requests.post(
+                "https://www.tikwm.com/api/",
+                data={"url": url, "count": 12, "cursor": 0, "web": 1, "hd": 1},
+                headers={"User-Agent":"Mozilla/5.0", "Referer":"https://www.tikwm.com/"},
+                timeout=20
+            )
+            data = resp.json()
+            print(f"TikWM response: {data}")
 
-            task.cancel()
-            try: await context.bot.delete_message(update.effective_chat.id, msg.message_id)
-            except: pass
+            if data.get("code") != 0 or not data.get("data", {}).get("play"):
+                raise Exception(f"TikTok API رفض الرابط: {data.get('msg','unknown')} - جرب رابط جديد")
 
+            play_url = data["data"]["play"]
+            title = data["data"].get("title","")
+            if play_url.startswith("//"): play_url = "https:" + play_url
+
+            # 3. حمّل الفيديو من سيرفر tikwm (مو سيرفر تيك توك المحظور)
+            print(f"Downloading video from {play_url}")
+            with tempfile.TemporaryDirectory() as tmp:
+                file_path = os.path.join(tmp, "video.mp4")
+                with requests.get(play_url, stream=True, timeout=40, headers={"User-Agent":"Mozilla/5.0"}) as r:
+                    r.raise_for_status()
+                    with open(file_path, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=1024*1024):
+                            if chunk: f.write(chunk)
+                
+                await context.bot.delete_message(update.effective_chat.id, msg.message_id)
+                await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
+                with open(file_path, 'rb') as f:
+                    await update.message.reply_video(video=f, caption=f"✅ بدون علامة\n{title[:100]}\n📢 @BotKanal24")
+            return
+
+        # --- غير تيك توك: يوتيوب انستا ---
+        import yt_dlp
+        with tempfile.TemporaryDirectory() as tmp:
+            opts = {'outtmpl': f'{tmp}/v.%(ext)s','format':'best[ext=mp4]/best','quiet':True,'noplaylist':True}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                path = ydl.prepare_filename(info)
+            await context.bot.delete_message(update.effective_chat.id, msg.message_id)
             await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
-            with open(video_file, 'rb') as f:
-                await update.message.reply_video(f, caption="✅ بدون علامة\n📢 @BotKanal24")
+            with open(path,'rb') as f:
+                await update.message.reply_video(f, caption="✅ @BotKanal24")
 
     except Exception as e:
-        task.cancel()
         print(f"FINAL ERROR: {e}")
         try:
-            await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=msg.message_id, text=f"❌ فشل التحميل\nالسبب: {e}\n\nجرب رابط تاني طويل مو vm")
-        except: pass
+            await context.bot.edit_message_text(update.effective_chat.id, msg.message_id, f"❌ فشل: {e}\n\nملاحظة: روابط vm بتنتهي، افتح تيك توك وانسخ رابط جديد من زر المشاركة > نسخ الرابط")
+        except:
+            await update.message.reply_text(f"❌ {e}")
 
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 threading.Thread(target=run_flask, daemon=True).start()
-if not TOKEN: print("BOT_TOKEN MISSING!")
 application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CallbackQueryHandler(check, pattern="check"))
