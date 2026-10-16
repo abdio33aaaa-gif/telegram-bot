@@ -1,21 +1,43 @@
-import os, re, glob, shutil, sqlite3, tempfile, threading, time, logging
+import os, re, html, glob, shutil, sqlite3, tempfile, threading, time, logging
 from datetime import datetime, timezone
 import telebot
 import yt_dlp
 from flask import Flask
 
 logging.basicConfig(level=logging.INFO)
-log = logging.getLogger("storiesbot")
+log = logging.getLogger("fastbot")
 
-TOKEN = os.getenv("BOT_TOKEN")  # توكن @Storiesa6d_bot
+TOKEN = os.getenv("BOT_TOKEN")  # توكن بوت التحميل السريع
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_ID", "").split(",") if x.strip().isdigit()}
-CHANNEL = "@BotKanal24"
-CHANNEL_LINK = "https://t.me/BotKanal24"
-COOKIES_FILE = os.getenv("IG_COOKIES")
-DB_PATH = os.getenv("DB_PATH", "bot.db")
+CHANNEL = os.getenv("CHANNEL", "@BotKanal24")
+CHANNEL_LINK = os.getenv("CHANNEL_LINK", "https://t.me/BotKanal24")
+COOKIES_FILE = os.getenv("COOKIES_FILE")      # مسار cookies.txt (اختياري)
+DB_PATH = os.getenv("DB_PATH", "fastbot.db")
 MAX_SIZE = 49 * 1024 * 1024
 
-IG_REGEX = re.compile(r"https?://(www\.)?instagram\.com/\S+", re.I)
+URL_REGEX = re.compile(
+    r"https?://(?:[\w-]+\.)*(?:tiktok\.com|instagram\.com|facebook\.com|fb\.watch|fb\.com|youtube\.com|youtu\.be)/\S*",
+    re.I,
+)
+
+def welcome_text(user):
+    name = html.escape(user.first_name or "صديقي")
+    return (
+        "┏━━━━━━━━━━━━━━━━━━┓\n"
+        "  🚀 <b>بوت التحميل السريع 2026</b>\n"
+        "┗━━━━━━━━━━━━━━━━━━┛\n\n"
+        f"👋 أهلاً بك <b>{name}</b>\n\n"
+        "✨ <b>حمّل أي مقطع بضغطة وحدة:</b>\n\n"
+        "🎵 <b>TikTok</b> ⟵ بدون علامة مائية\n"
+        "📸 <b>Instagram</b> ⟵ ريلز • ستوري • منشورات\n"
+        "📘 <b>Facebook</b> ⟵ فيديوهات وريلز\n"
+        "▶️ <b>YouTube</b> ⟵ فيديوهات وشورتس\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "⚡ سريع  •  🔒 آمن  •  🚫 بدون إعلانات\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "📎 <b>أرسل الرابط الآن</b> وأنا أرسل لك المقطع 👇"
+    )
+
 
 bot = telebot.TeleBot(TOKEN, threaded=True)
 app = Flask(__name__)
@@ -39,7 +61,7 @@ def init_db():
     db("""CREATE TABLE IF NOT EXISTS users(
         user_id INTEGER PRIMARY KEY, username TEXT, joined TEXT, banned INTEGER DEFAULT 0)""")
     db("""CREATE TABLE IF NOT EXISTS downloads(
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ts TEXT, ok INTEGER)""")
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, platform TEXT, ts TEXT, ok INTEGER)""")
 
 
 def today():
@@ -64,13 +86,24 @@ def is_admin(user_id):
     return user_id in ADMIN_IDS
 
 
+def platform_of(url):
+    u = url.lower()
+    if "tiktok" in u:
+        return "tiktok"
+    if "instagram" in u:
+        return "instagram"
+    if "facebook" in u or "fb." in u:
+        return "facebook"
+    return "youtube"
+
+
 # ---------------- الويب ----------------
 @app.route("/")
 def home():
-    return "Storiesa6d_bot is Running!"
+    return "Fast Download Bot is Running!"
 
 
-# ---------------- الاشتراك ----------------
+# ---------------- الاشتراك (إجباري) ----------------
 def is_subscribed(user_id):
     try:
         status = bot.get_chat_member(CHANNEL, user_id).status
@@ -87,14 +120,28 @@ def sub_markup():
     return markup
 
 
+def ask_subscribe(chat_id):
+    bot.send_message(
+        chat_id,
+        "🔒 <b>الاشتراك إجباري</b>\n\n"
+        "لاستخدام البوت لازم تشترك أولاً في قناتنا الرسمية:\n"
+        f"📢 {CHANNEL}\n\n"
+        "اشترك ثم اضغط <b>✅ تحققت</b>",
+        reply_markup=sub_markup(),
+        parse_mode="HTML",
+    )
+
+
 # ---------------- التحميل ----------------
 def download_media(url, out_dir):
     opts = {
         "outtmpl": os.path.join(out_dir, "%(id)s.%(ext)s"),
-        "format": "best",
+        # ملف واحد جاهز (بدون ffmpeg) وبحجم مناسب لتيليجرام
+        "format": "b[filesize<49M]/b[filesize_approx<49M]/b[height<=480]/b",
         "quiet": True,
         "noplaylist": True,
         "max_filesize": MAX_SIZE,
+        "socket_timeout": 30,
     }
     if COOKIES_FILE and os.path.exists(COOKIES_FILE):
         opts["cookiefile"] = COOKIES_FILE
@@ -105,23 +152,32 @@ def download_media(url, out_dir):
 
 def send_file(chat_id, path):
     ext = os.path.splitext(path)[1].lower()
+    caption = "✅ تم التحميل"
     with open(path, "rb") as f:
         if ext in (".mp4", ".mov", ".webm", ".mkv"):
-            bot.send_video(chat_id, f, caption="✅ @Storiesa6d_bot", supports_streaming=True)
+            bot.send_video(chat_id, f, caption=caption, supports_streaming=True)
         elif ext in (".jpg", ".jpeg", ".png", ".webp"):
-            bot.send_photo(chat_id, f, caption="✅ @Storiesa6d_bot")
+            bot.send_photo(chat_id, f, caption=caption)
+        elif ext in (".mp3", ".m4a"):
+            bot.send_audio(chat_id, f, caption=caption)
         else:
-            bot.send_document(chat_id, f, caption="✅ @Storiesa6d_bot")
+            bot.send_document(chat_id, f, caption=caption)
 
 
 def process_link(chat_id, user_id, url):
-    wait = bot.send_message(chat_id, "⏳ جاري التحميل...")
+    wait = bot.send_message(chat_id, "⏳ جاري تحليل الرابط...")
+    bot.send_chat_action(chat_id, "typing")
     tmp = tempfile.mkdtemp()
     ok = 0
     try:
         files = download_media(url, tmp)
         if not files:
             raise RuntimeError("no files")
+        try:
+            bot.edit_message_text("📤 جاري إرسال المقطع المرئي...", chat_id, wait.message_id)
+        except Exception:
+            pass
+        bot.send_chat_action(chat_id, "upload_video")
         for p in files:
             send_file(chat_id, p)
         ok = 1
@@ -130,10 +186,11 @@ def process_link(chat_id, user_id, url):
         bot.send_message(
             chat_id,
             "❌ ما قدرت أحمل الرابط.\n"
-            "تأكد إن الحساب عام وإن الستوري لسا موجود (ما انتهت 24 ساعة).",
+            "تأكد إن الرابط صحيح والفيديو عام، وإن حجمه أقل من 50MB.",
         )
     finally:
-        db("INSERT INTO downloads(user_id, ts, ok) VALUES(?,?,?)", (user_id, now(), ok))
+        db("INSERT INTO downloads(user_id, platform, ts, ok) VALUES(?,?,?,?)",
+           (user_id, platform_of(url), now(), ok))
         shutil.rmtree(tmp, ignore_errors=True)
         try:
             bot.delete_message(chat_id, wait.message_id)
@@ -168,6 +225,9 @@ def stats(m):
     dl_today = db("SELECT COUNT(*) FROM downloads WHERE ok=1 AND ts LIKE ?", (t + "%",), "one")[0]
     failed = db("SELECT COUNT(*) FROM downloads WHERE ok=0", fetch="one")[0]
     active = db("SELECT COUNT(DISTINCT user_id) FROM downloads WHERE ts LIKE ?", (t + "%",), "one")[0]
+    per = db("SELECT platform, COUNT(*) FROM downloads WHERE ok=1 GROUP BY platform", fetch="all")
+    names = {"tiktok": "TikTok", "instagram": "Instagram", "facebook": "Facebook", "youtube": "YouTube"}
+    per_txt = "\n".join(f"   • {names.get(p, p)}: {c}" for p, c in per) or "   —"
     bot.send_message(
         m.chat.id,
         "📊 إحصائيات البوت\n\n"
@@ -177,7 +237,8 @@ def stats(m):
         f"🚫 محظورين: {banned}\n\n"
         f"📥 تحميلات ناجحة: {dl_total}\n"
         f"📅 تحميلات اليوم: {dl_today}\n"
-        f"❌ تحميلات فاشلة: {failed}",
+        f"❌ تحميلات فاشلة: {failed}\n\n"
+        f"📱 حسب المنصة:\n{per_txt}",
     )
 
 
@@ -193,7 +254,7 @@ def do_broadcast(admin_chat, text=None, copy_from=None):
             sent += 1
         except Exception:
             failed += 1
-        time.sleep(0.05)  # تجنب حدود تيليجرام
+        time.sleep(0.05)
     bot.send_message(admin_chat, f"✅ انتهى الإرسال\nوصلت: {sent}\nفشلت (حاظرين البوت غالباً): {failed}")
 
 
@@ -243,18 +304,9 @@ def start(m):
     if is_banned(m.from_user.id):
         return
     if not is_subscribed(m.from_user.id):
-        bot.send_message(
-            m.chat.id,
-            f"🚀 لتحميل ستوري انستا بجودة HD وبدون اعلانات\n\n"
-            f"⚠️ يجب ان تشترك اولاً في قناتنا الرسمية:\n{CHANNEL}\n\nاشترك وبعدها اضغط تحققت",
-            reply_markup=sub_markup(),
-        )
+        ask_subscribe(m.chat.id)
         return
-    bot.send_message(
-        m.chat.id,
-        "🚀 حمّل ستوري انستا بجودة HD | سريع - آمن - بدون اعلانات\n\n"
-        "ابعت رابط الستوري العام\n\n@Storiesa6d_bot",
-    )
+    bot.send_message(m.chat.id, welcome_text(m.from_user), parse_mode="HTML")
 
 
 @bot.callback_query_handler(func=lambda c: c.data == "check_sub")
@@ -265,7 +317,7 @@ def check(c):
             bot.delete_message(c.message.chat.id, c.message.message_id)
         except Exception:
             pass
-        bot.send_message(c.message.chat.id, "✅ تم الاشتراك بنجاح! ابعت رابط الستوري هلق")
+        bot.send_message(c.message.chat.id, "✅ <b>تم الاشتراك بنجاح!</b>\n\n" + welcome_text(c.from_user), parse_mode="HTML")
     else:
         bot.answer_callback_query(c.id, f"❌ لسا ما اشتركت في {CHANNEL}", show_alert=True)
 
@@ -276,11 +328,11 @@ def handle(m):
     if is_banned(m.from_user.id):
         return
     if not is_subscribed(m.from_user.id):
-        bot.send_message(m.chat.id, f"❌ لازم تشترك اولاً: {CHANNEL}", reply_markup=sub_markup())
+        ask_subscribe(m.chat.id)
         return
-    match = IG_REGEX.search(m.text or "")
+    match = URL_REGEX.search(m.text or "")
     if not match:
-        bot.send_message(m.chat.id, "⚠️ ابعت رابط انستغرام صحيح، مثال:\nhttps://www.instagram.com/stories/username/123456789/")
+        bot.send_message(m.chat.id, "⚠️ ابعت رابط صحيح من TikTok أو Instagram أو Facebook أو YouTube")
         return
     threading.Thread(
         target=process_link, args=(m.chat.id, m.from_user.id, match.group(0)), daemon=True
