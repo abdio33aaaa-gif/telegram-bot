@@ -1,6 +1,7 @@
 import os, re, html, glob, shutil, sqlite3, tempfile, threading, time, logging
 from datetime import datetime, timezone
 import telebot
+import requests
 import yt_dlp
 from flask import Flask
 
@@ -23,9 +24,8 @@ URL_REGEX = re.compile(
 def welcome_text(user):
     name = html.escape(user.first_name or "صديقي")
     return (
-        "┏━━━━━━━━━━━━━━━━━━┓\n"
-        "  🚀 <b>بوت التحميل السريع 2026</b>\n"
-        "┗━━━━━━━━━━━━━━━━━━┛\n\n"
+        "🚀 <b>بوت التحميل السريع 2026</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
         f"👋 أهلاً بك <b>{name}</b>\n\n"
         "✨ <b>حمّل أي مقطع بضغطة وحدة:</b>\n\n"
         "🎵 <b>TikTok</b> ⟵ بدون علامة مائية\n"
@@ -150,6 +150,37 @@ def download_media(url, out_dir):
     return sorted(glob.glob(os.path.join(out_dir, "*")))
 
 
+def tikwm_download(url, out_dir):
+    """بديل لتيك توك إذا فشل yt-dlp (بدون علامة مائية)."""
+    r = requests.get("https://www.tikwm.com/api/", params={"url": url, "hd": 1}, timeout=30)
+    data = (r.json() or {}).get("data") or {}
+    links = []
+    video = data.get("hdplay") or data.get("play")
+    if video:
+        links.append((video, "mp4"))
+    else:
+        for img in data.get("images") or []:
+            links.append((img, "jpg"))
+    if not links:
+        raise RuntimeError("tikwm: no media")
+    paths = []
+    for i, (link, ext) in enumerate(links):
+        if link.startswith("/"):
+            link = "https://www.tikwm.com" + link
+        path = os.path.join(out_dir, f"tt_{i}.{ext}")
+        size = 0
+        with requests.get(link, stream=True, timeout=60) as resp:
+            resp.raise_for_status()
+            with open(path, "wb") as f:
+                for chunk in resp.iter_content(1024 * 256):
+                    size += len(chunk)
+                    if size > MAX_SIZE:
+                        raise RuntimeError("file too large")
+                    f.write(chunk)
+        paths.append(path)
+    return paths
+
+
 def send_file(chat_id, path):
     ext = os.path.splitext(path)[1].lower()
     caption = "✅ تم التحميل"
@@ -170,9 +201,15 @@ def process_link(chat_id, user_id, url):
     tmp = tempfile.mkdtemp()
     ok = 0
     try:
-        files = download_media(url, tmp)
-        if not files:
-            raise RuntimeError("no files")
+        try:
+            files = download_media(url, tmp)
+            if not files:
+                raise RuntimeError("no files")
+        except Exception as first_err:
+            if platform_of(url) != "tiktok":
+                raise
+            log.warning("yt-dlp failed for tiktok (%s), trying fallback", first_err)
+            files = tikwm_download(url, tmp)
         try:
             bot.edit_message_text("📤 جاري إرسال المقطع المرئي...", chat_id, wait.message_id)
         except Exception:
@@ -183,6 +220,11 @@ def process_link(chat_id, user_id, url):
         ok = 1
     except Exception as e:
         log.error("Download failed: %s", e)
+        for aid in ADMIN_IDS:
+            try:
+                bot.send_message(aid, f"⚠️ فشل تحميل ({platform_of(url)})\n{url}\n\n{str(e)[:600]}")
+            except Exception:
+                pass
         bot.send_message(
             chat_id,
             "❌ ما قدرت أحمل الرابط.\n"
