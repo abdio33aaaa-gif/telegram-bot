@@ -1,114 +1,109 @@
-import os, threading, requests, yt_dlp
-import telebot
+import os, threading, requests, tempfile, re
 from flask import Flask
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-TOKEN = os.getenv("BOT_TOKEN") # توكن @Storiesa6d_bot
+TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL = "@BotKanal24"
-CHANNEL_LINK = "https://t.me/BotKanal24"
-
-bot = telebot.TeleBot(TOKEN)
+LINK = "https://t.me/BotKanal24"
 app = Flask(__name__)
-
-# إعدادات التحميل
-YDL_OPTS_VIDEO = {
-    'format': 'best',
-    'noplaylist': True,
-    'quiet': True,
-    'no_warnings': True,
-    'outtmpl': '/tmp/%(id)s.%(ext)s',
-}
-
-def expand_url(short_url):
-    """حل مشكلة vm.tiktok.com يلي بالصورة"""
-    try:
-        r = requests.get(short_url, allow_redirects=True, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
-        return r.url
-    except:
-        return short_url
-
 @app.route('/')
-def home():
-    return "Storiesa6d_bot is Running!"
+def home(): return "Bot V12 OK - TikTok FB Insta"
 
-def is_subscribed(user_id):
+async def is_sub(bot, uid):
     try:
-        status = bot.get_chat_member(CHANNEL, user_id).status
-        return status in ['member', 'administrator', 'creator']
-    except Exception:
-        return True # اذا البوت مو أدمن بالقناة
+        m = await bot.get_chat_member(CHANNEL, uid)
+        return m.status in ['member','administrator','creator']
+    except: return True
 
-@bot.message_handler(commands=['start'])
-def start(m):
-    if not is_subscribed(m.from_user.id):
-        markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(telebot.types.InlineKeyboardButton("📢 اشترك في القناة", url=CHANNEL_LINK))
-        markup.add(telebot.types.InlineKeyboardButton("✅ تحققت", callback_data="check_sub"))
-        bot.send_message(m.chat.id, f"🚀 لحمل ستوري انستا + تيك توك بدون علامة\n\n⚠️ يجب ان تشترك اولاً في قناتنا الرسمية:\n{CHANNEL}\n\nاشترك وبعدها اضغط تحققت", reply_markup=markup)
-        return
-    bot.send_message(m.chat.id, "🚀 حل ستوري انستا بجودة HD | سريع - آمن - بدون اعلانات\n\n📩 ابعت رابط الستوري او التيك توك\n\n@Storiesa6d_bot")
+def kb():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("📢 اشترك بالقناة", url=LINK)],[InlineKeyboardButton("✅ تحققت", callback_data="check")]])
 
-@bot.callback_query_handler(func=lambda c: c.data == "check_sub")
-def check(c):
-    if is_subscribed(c.from_user.id):
-        bot.delete_message(c.message.chat.id, c.message.message_id)
-        bot.send_message(c.message.chat.id, "✅ تم الاشتراك بنجاح! ابعت رابط الفيديو هلق")
-    else:
-        bot.answer_callback_query(c.id, "❌ لسا ما اشتركت في @BotKanal24", show_alert=True)
+WELCOME = "🚀 ارسل رابط تيك توك / فيسبوك / انستا"
 
-@bot.message_handler(func=lambda m: True)
-def handle(m):
-    if not is_subscribed(m.from_user.id):
-        bot.send_message(m.chat.id, f"❌ لازم تشترك اولاً: {CHANNEL}")
-        return
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_sub(context.bot, update.effective_user.id):
+        await update.message.reply_text("⚠️ اشترك اولا", reply_markup=kb()); return
+    await update.message.reply_text(WELCOME)
 
-    url = m.text.strip()
-    if not url.startswith("http"):
-        bot.send_message(m.chat.id, "❌ ابعت رابط صحيح يبدأ بـ https://")
-        return
+async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    if await is_sub(context.bot, q.from_user.id):
+        await q.edit_message_text("✅ تم التفعيل!")
+        await context.bot.send_message(q.from_user.id, WELCOME)
+    else: await q.answer("❌ لسه ما اشتركت", show_alert=True)
 
-    wait = bot.send_message(m.chat.id, "⚡️ ثانية... جاري التحميل بدون علامة")
-
-    try:
-        # أهم خطوة: نحل الرابط القصير يلي كان يسبب الخطأ بالصورة
-        if "vm.tiktok.com" in url or "vt.tiktok.com" in url or "vm.tiktok" in url:
-            url = expand_url(url)
-
-        with yt_dlp.YoutubeDL(YDL_OPTS_VIDEO) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-
-        # نرسل الفيديو
-        with open(filename, 'rb') as f:
-            bot.send_video(m.chat.id, f, caption="✅ بدون علامة\n📢 @BotKanal24", supports_streaming=True)
-
-        os.remove(filename)
-        bot.delete_message(m.chat.id, wait.message_id)
-
-    except Exception as e:
-        print(f"Error: {e}")
-        bot.edit_message_text(
-            "❌ ما قدرت حمل هاد الرابط\n\n"
-            "اذا تيك توك:\n"
-            "1- افتح الفيديو بتيك توك\n"
-            "2- اضغط مشاركة > نسخ الرابط\n"
-            "3- ارجع ابعتو هون (لازم يكون رابط طويل فيه /video/)\n\n"
-            "اذا انستا ستوري لازم يكون الحساب عام",
-            m.chat.id, wait.message_id
-        )
-        # حاول تنظيف الملف لو موجود
+def download_via_ssstik(tiktok_url):
+    sess = requests.Session()
+    sess.headers.update({"User-Agent":"Mozilla/5.0"})
+    if "vm.tiktok.com" in tiktok_url or "vt.tiktok.com" in tiktok_url:
         try:
-            if 'filename' in locals() and os.path.exists(filename):
-                os.remove(filename)
-        except:
-            pass
+            r = sess.get(tiktok_url, allow_redirects=True, timeout=15)
+            tiktok_url = r.url
+        except: pass
+    try:
+        main = sess.get("https://ssstik.io/en", timeout=15)
+        tt_match = re.search(r'tt:\s*["\']([^"\']+)["\']', main.text)
+        if not tt_match:
+            tt_match = re.search(r'name="tt"\s+value="([^"]+)"', main.text)
+        tt = tt_match.group(1) if tt_match else ""
+        data = {"id": tiktok_url, "locale": "en", "tt": tt}
+        res = sess.post("https://ssstik.io/abc?url=dl", data=data, timeout=20)
+        m = re.search(r'href="([^"]+)"[^>]*>Without watermark', res.text)
+        if not m:
+            m = re.search(r'href="([^"]+\.mp4[^"]*)"', res.text)
+        if m:
+            return m.group(1)
+    except Exception as e:
+        print(f"ssstik error: {e}")
+    return None
 
-def run_bot():
-    bot.infinity_polling()
+async def down(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_sub(context.bot, update.effective_user.id):
+        await update.message.reply_text("⚠️ اشترك اولا", reply_markup=kb()); return
+    url = update.message.text.strip()
+    if "http" not in url: return
+    msg = await update.message.reply_text("⚡️ جاري التحميل...")
+    await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
+    try:
+        dl_url = None
+        if "tiktok.com" in url:
+            dl_url = download_via_ssstik(url)
+            if not dl_url:
+                raise Exception("ما قدرت جيب رابط التيك توك - جرب رابط طويل جديد")
+            with tempfile.TemporaryDirectory() as tmp:
+                fp = os.path.join(tmp, "video.mp4")
+                with requests.get(dl_url, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    with open(fp, 'wb') as f:
+                        for c in r.iter_content(1024*1024):
+                            if c: f.write(c)
+                await context.bot.delete_message(update.effective_chat.id, msg.message_id)
+                with open(fp, 'rb') as f:
+                    await update.message.reply_video(f, caption="✅ بدون علامة\n📢 @BotKanal24")
+            return
+        else:
+            # فيسبوك وانستا
+            import yt_dlp
+            with tempfile.TemporaryDirectory() as tmp:
+                opts = {'outtmpl': f'{tmp}/v.%(ext)s','format':'best','quiet':True,'noplaylist':True}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    path = ydl.prepare_filename(info)
+                await context.bot.delete_message(update.effective_chat.id, msg.message_id)
+                with open(path,'rb') as f:
+                    await update.message.reply_video(f, caption="✅ @BotKanal24")
+    except Exception as e:
+        print(f"ERROR: {e}")
+        try: await context.bot.edit_message_text(update.effective_chat.id, msg.message_id, f"❌ {e}")
+        except: await update.message.reply_text(f"❌ {e}")
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
-if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    run_web()
+threading.Thread(target=run_flask, daemon=True).start()
+application = Application.builder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CallbackQueryHandler(check, pattern="check"))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, down))
+application.run_polling(drop_pending_updates=True)
