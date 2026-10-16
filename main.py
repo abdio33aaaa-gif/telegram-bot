@@ -1,110 +1,112 @@
-import os, threading, requests, yt_dlp
+import os, re, glob, shutil, sqlite3, tempfile, threading, time, logging
+from datetime import datetime, timezone
 import telebot
+import yt_dlp
 from flask import Flask
 
-TOKEN = os.getenv("BOT_TOKEN") # توكن @Storiesa6d_bot
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("storiesbot")
+
+TOKEN = os.getenv("BOT_TOKEN")  # توكن @Storiesa6d_bot
+ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_ID", "").split(",") if x.strip().isdigit()}
 CHANNEL = "@BotKanal24"
 CHANNEL_LINK = "https://t.me/BotKanal24"
+COOKIES_FILE = os.getenv("IG_COOKIES")
+DB_PATH = os.getenv("DB_PATH", "bot.db")
+MAX_SIZE = 49 * 1024 * 1024
 
-bot = telebot.TeleBot(TOKEN)
+IG_REGEX = re.compile(r"https?://(www\.)?instagram\.com/\S+", re.I)
+
+bot = telebot.TeleBot(TOKEN, threaded=True)
 app = Flask(__name__)
 
-# إعدادات التحميل
-YDL_OPTS_VIDEO = {
-    'format': 'best',
-    'noplaylist': True,
-    'quiet': True,
-    'no_warnings': True,
-    'outtmpl': '/tmp/%(id)s.%(ext)s',
-}
 
-def expand_url(short_url):
-    """حل مشكلة vm.tiktok.com يلي بالصورة"""
+# ---------------- قاعدة البيانات ----------------
+def db(query, args=(), fetch=None):
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     try:
-        r = requests.get(short_url, allow_redirects=True, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
-        return r.url
-    except:
-        return short_url
+        cur = conn.execute(query, args)
+        conn.commit()
+        if fetch == "one":
+            return cur.fetchone()
+        if fetch == "all":
+            return cur.fetchall()
+    finally:
+        conn.close()
 
-@app.route('/')
+
+def init_db():
+    db("""CREATE TABLE IF NOT EXISTS users(
+        user_id INTEGER PRIMARY KEY, username TEXT, joined TEXT, banned INTEGER DEFAULT 0)""")
+    db("""CREATE TABLE IF NOT EXISTS downloads(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ts TEXT, ok INTEGER)""")
+
+
+def today():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def register(user):
+    db("INSERT OR IGNORE INTO users(user_id, username, joined) VALUES(?,?,?)",
+       (user.id, user.username or "", now()))
+
+
+def is_banned(user_id):
+    r = db("SELECT banned FROM users WHERE user_id=?", (user_id,), "one")
+    return bool(r and r[0])
+
+
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
+
+
+# ---------------- الويب ----------------
+@app.route("/")
 def home():
     return "Storiesa6d_bot is Running!"
 
+
+# ---------------- الاشتراك ----------------
 def is_subscribed(user_id):
     try:
         status = bot.get_chat_member(CHANNEL, user_id).status
-        return status in ['member', 'administrator', 'creator']
-    except Exception:
-        return True # اذا البوت مو أدمن بالقناة
-
-@bot.message_handler(commands=['start'])
-def start(m):
-    if not is_subscribed(m.from_user.id):
-        markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(telebot.types.InlineKeyboardButton("📢 اشترك في القناة", url=CHANNEL_LINK))
-        markup.add(telebot.types.InlineKeyboardButton("✅ تحققت", callback_data="check_sub"))
-        bot.send_message(m.chat.id, f"🚀 لحمل ستوري انستا + تيك توك بدون علامة\n\n⚠️ يجب ان تشترك اولاً في قناتنا الرسمية:\n{CHANNEL}\n\nاشترك وبعدها اضغط تحققت", reply_markup=markup)
-        return
-    bot.send_message(m.chat.id, "🚀 حل ستوري انستا بجودة HD | سريع - آمن - بدون اعلانات\n\n📩 ابعت رابط الستوري او التيك توك\n\n@Storiesa6d_bot")
-
-@bot.callback_query_handler(func=lambda c: c.data == "check_sub")
-def check(c):
-    if is_subscribed(c.from_user.id):
-        bot.delete_message(c.message.chat.id, c.message.message_id)
-        bot.send_message(c.message.chat.id, "✅ تم الاشتراك بنجاح! ابعت رابط الفيديو هلق")
-    else:
-        bot.answer_callback_query(c.id, "❌ لسا ما اشتركت في @BotKanal24", show_alert=True)
-
-@bot.message_handler(func=lambda m: True)
-def handle(m):
-    if not is_subscribed(m.from_user.id):
-        bot.send_message(m.chat.id, f"❌ لازم تشترك اولاً: {CHANNEL}")
-        return
-
-    url = m.text.strip()
-    if not url.startswith("http"):
-        bot.send_message(m.chat.id, "❌ ابعت رابط صحيح يبدأ بـ https://")
-        return
-
-    wait = bot.send_message(m.chat.id, "⚡️ ثانية... جاري التحميل بدون علامة")
-
-    try:
-        # أهم خطوة: نحل الرابط القصير يلي كان يسبب الخطأ بالصورة
-        if "vm.tiktok.com" in url or "vt.tiktok.com" in url or "vm.tiktok" in url:
-            url = expand_url(url)
-
-        with yt_dlp.YoutubeDL(YDL_OPTS_VIDEO) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-
-        # نرسل الفيديو
-        with open(filename, 'rb') as f:
-            bot.send_video(m.chat.id, f, caption="✅ بدون علامة\n📢 @BotKanal24", supports_streaming=True)
-
-        os.remove(filename)
-        bot.delete_message(m.chat.id, wait.message_id)
-
+        return status in ("member", "administrator", "creator")
     except Exception as e:
-        print(f"Error: {e}")
-        bot.edit_message_text(
-            "❌ ما قدرت حمل هاد الرابط\n\n"
-            "اذا تيك توك:\n"
-            "1- افتح الفيديو بتيك توك\n"
-            "2- اضغط مشاركة > نسخ الرابط\n"
-            "3- ارجع ابعتو هون (لازم يكون رابط طويل فيه /video/)\n\n"
-            "اذا انستا ستوري لازم يكون الحساب عام",
-            m.chat.id, wait.message_id
-        )
-        # حاول تنظيف الملف لو موجود
-        try:
-            if 'filename' in locals() and os.path.exists(filename):
-                os.remove(filename)
-        except:
-            pass
+        log.error("Subscription check failed: %s", e)
+        return False
 
-def run_bot():
-    bot.infinity_polling()
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run
+def sub_markup():
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("📢 اشترك في القناة", url=CHANNEL_LINK))
+    markup.add(telebot.types.InlineKeyboardButton("✅ تحققت", callback_data="check_sub"))
+    return markup
+
+
+# ---------------- التحميل ----------------
+def download_media(url, out_dir):
+    opts = {
+        "outtmpl": os.path.join(out_dir, "%(id)s.%(ext)s"),
+        "format": "best",
+        "quiet": True,
+        "noplaylist": True,
+        "max_filesize": MAX_SIZE,
+    }
+    if COOKIES_FILE and os.path.exists(COOKIES_FILE):
+        opts["cookiefile"] = COOKIES_FILE
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([url])
+    return sorted(glob.glob(os.path.join(out_dir, "*")))
+
+
+def send_file(chat_id, path):
+    ext = os.path.splitext(path)[1].lower()
+    with open(path, "rb") as f:
+        if ext in (".mp4", ".mov", ".webm", ".mkv"):
+            bot.send_video(chat_id, f, caption="✅ @Storiesa6d_bot", supports_streaming=True)
+        elif ext in (".jpg", ".jpeg", ".png", ".webp"):
+            bot.send_photo(chat_id, f,
