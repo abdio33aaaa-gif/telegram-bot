@@ -1,4 +1,4 @@
-import os, threading, requests, re
+import os, threading, requests
 import telebot
 from flask import Flask
 
@@ -8,49 +8,47 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Working - vm.tiktok fix"
+    return "Bot Working - vm fix"
 
-def get_tiktok_video(url):
-    """يجرب 3 مواقع لحد ما واحد يشتغل - بيحل vm.tiktok مباشرة"""
-
-    # 1- جرب tikwm - بيحل الروابط القصيرة مباشرة بدون ما نحلها نحن
+def get_video_url(original_url):
+    # الطريقة 1: Cobalt API - بتحل vm.tiktok وانستا وفيسبوك
     try:
-        r = requests.get(f"https://www.tikwm.com/api/?url={url}",
-                        headers={'User-Agent':'Mozilla/5.0'}, timeout=15).json()
-        if r.get('code') == 0:
-            data = r['data']
-            video = data.get('hdplay') or data.get('play') or data.get('wmplay')
-            if video:
-                return video
+        r = requests.post(
+            "https://api.cobalt.tools/api/json",
+            json={"url": original_url},
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            timeout=25
+        ).json()
+        if r.get("status") in ["tunnel", "redirect", "picker"]:
+            # لو رجع picker بكون فيه عدة فيديوهات
+            if r.get("picker"):
+                return r["picker"][0]["url"]
+            return r.get("url")
+    except Exception as e:
+        print(f"Cobalt fail: {e}")
+
+    # الطريقة 2: TiklyDown - مخصصة لتيك توك وبتحل vm.tiktok مباشرة
+    try:
+        r = requests.get(
+            f"https://tiklydown.eu.org/api/download?url={original_url}",
+            timeout=20
+        ).json()
+        if r.get("video"):
+            return r["video"].get("noWatermark") or r["video"].get("watermark")
+    except Exception as e:
+        print(f"TiklyDown fail: {e}")
+
+    # الطريقة 3: tikwm - احتياط
+    try:
+        r = requests.get(
+            f"https://www.tikwm.com/api/?url={original_url}",
+            headers={'User-Agent':'Mozilla/5.0'},
+            timeout=20
+        ).json()
+        if r.get("code") == 0:
+            return r["data"].get("hdplay") or r["data"].get("play")
     except Exception as e:
         print(f"tikwm fail: {e}")
-
-    # 2- جرب tikmate
-    try:
-        r = requests.get(f"https://tikmate.app/api/look?q={url}",
-                        headers={'User-Agent':'Mozilla/5.0'}, timeout=15).json()
-        if r.get('success'):
-            return f"https://tikmate.app{r.get('token')}{r.get('id')}.mp4"
-    except Exception as e:
-        print(f"tikmate fail: {e}")
-
-    # 3- جرب ssstik
-    try:
-        # جيب التوكن
-        session = requests.Session()
-        page = session.get("https://ssstik.io/en", headers={'User-Agent':'Mozilla/5.0'}, timeout=15).text
-        m = re.search(r"s_tt\s*=\s*'([^']+)'", page)
-        if m:
-            tt = m.group(1)
-            res = session.post("https://ssstik.io/abc?url=dl", data={'id':url,'locale':'en','tt':tt},
-                               headers={'User-Agent':'Mozilla/5.0'}, timeout=15).text
-            m2 = re.search(r'href="([^"]+)"[^>]*>Without watermark', res)
-            if not m2:
-                m2 = re.search(r'<a[^>]+href="([^"]+)"[^>]*download', res)
-            if m2:
-                return m2.group(1)
-    except Exception as e:
-        print(f"ssstik fail: {e}")
 
     return None
 
@@ -58,9 +56,13 @@ def get_tiktok_video(url):
 def start(m):
     bot.send_message(m.chat.id,
         "🚀 أهلا بك في بوت التحميل السريع!\n\n"
-        "📥 TikTok - Instagram - Facebook\n"
-        "أرسل رابط عام\n\n"
-        "@MyDownload2026_bot")
+        "📥 المنصات المدعومة:\n"
+        "• TikTok بدون علامة\n"
+        "• Instagram ريلز وستوري\n"
+        "• Facebook - YouTube\n\n"
+        "أرسل رابط عام وهلا بحملو!\n\n"
+        "@MyDownload2026_bot"
+    )
 
 @bot.message_handler(func=lambda m: True)
 def handle(m):
@@ -68,33 +70,24 @@ def handle(m):
     if not url.startswith("http"):
         return
 
-    wait = bot.send_message(m.chat.id, "⚡️ ثواني... عم حل الرابط")
+    wait = bot.send_message(m.chat.id, "⚡️ ثواني عم حل الرابط...")
 
     try:
-        video_url = None
-        if "tiktok.com" in url:
-            video_url = get_tiktok_video(url)
-        else:
-            # انستا وفيسبوك
-            import yt_dlp
-            opts = {'format':'best','quiet':True,'no_warnings':True,'noplaylist':True}
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                video_url = info.get('url') or (info['formats'][-1]['url'] if info.get('formats') else None)
-
-        if video_url:
-            bot.send_video(m.chat.id, video_url, caption="✅ بدون علامة\n@MyDownload2026_bot")
+        video = get_video_url(url)
+        if video:
+            bot.send_video(m.chat.id, video, caption="✅ بدون علامة\n@MyDownload2026_bot")
             bot.delete_message(m.chat.id, wait.message_id)
         else:
-            raise Exception("No video")
+            raise Exception("All APIs failed")
 
     except Exception as e:
-        print(f"Error final: {e}")
+        print(f"Final fail for {url}: {e}")
         bot.edit_message_text(
             "❌ ما قدرت حل الرابط\n"
-            "• الرابط عام مو خاص\n"
-            "• جرب رابط طويل من مشاركة > نسخ الرابط",
-            m.chat.id, wait.message_id)
+            "جرب تبعت الرابط الطويل:\n"
+            "تيك توك > مشاركة > نسخ الرابط",
+            m.chat.id, wait.message_id
+        )
 
 def run_bot():
     while True:
