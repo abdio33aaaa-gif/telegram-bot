@@ -2,9 +2,13 @@ import os
 import requests
 import yt_dlp
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_USERNAME = "@BotKanal24"  # قناتك الرسمية
+CHANNEL_LINK = "https://t.me/BotKanal24"
+
 app = Flask(__name__)
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -15,13 +19,44 @@ def resolve_url(url):
     except:
         return url
 
+def is_subscribed(user_id):
+    try:
+        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        return member.status in ['creator', 'administrator', 'member']
+    except:
+        return False  # اذا البوت مو ادمن بالقناة رح يرجع False
+
 @bot.message_handler(commands=['start'])
 def start(message):
+    if not is_subscribed(message.from_user.id):
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("📢 اشترك بالقناة الرسمية", url=CHANNEL_LINK))
+        markup.add(InlineKeyboardButton("✅ تحققت، اشتركت", callback_data="check_sub"))
+        bot.send_message(message.chat.id, 
+            "يا هلا! 🔥\n\nلازم تشترك بقناتنا @BotKanal24 أول شي مشان يشتغل البوت معك:",
+            reply_markup=markup)
+        return
+
     text = "اهلا بيك بـ بوت التحميل السريع\n\nيحمل بجودة HD - بدون علامة مائية\nتيك توك | انستا | يوتيوب | فيسبوك\n\nبس ابعت الرابط وانا بجيبو بثانية"
     bot.send_message(message.chat.id, text)
 
+@bot.callback_query_handler(func=lambda call: call.data == "check_sub")
+def check_sub_callback(call):
+    if is_subscribed(call.from_user.id):
+        bot.answer_callback_query(call.id, "تم الاشتراك بنجاح ✅")
+        bot.send_message(call.message.chat.id, "تمام اشتركت! هلا ابعت الرابط وبحملو فوراً 🚀")
+    else:
+        bot.answer_callback_query(call.id, "لسا ما اشتركت 😅", show_alert=True)
+
 @bot.message_handler(func=lambda m: True)
 def handle(message):
+    # تشييك الاشتراك قبل التحميل
+    if not is_subscribed(message.from_user.id):
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("📢 اشترك بالقناة", url=CHANNEL_LINK))
+        bot.send_message(message.chat.id, "❗️ لازم تشترك أولاً @BotKanal24", reply_markup=markup)
+        return
+
     url = message.text.strip()
     if not url.startswith("http"):
         return
